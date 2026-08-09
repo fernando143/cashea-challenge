@@ -21,4 +21,9 @@ export const env = {
   port: Number(process.env.PORT ?? 3000),
   nodeEnv: process.env.NODE_ENV ?? "development",
   jwtSecret: requireEnv("JWT_SECRET"),
+  pgHost: requireEnv("PGHOST"),
+  pgPort: Number(requireEnv("PGPORT")),
+  pgUser: requireEnv("PGUSER"),
+  pgPassword: requireEnv("PGPASSWORD"),
+  pgDatabase: requireEnv("PGDATABASE"),
 };
