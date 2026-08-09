@@ -24,7 +24,7 @@
   <body>
     <main>
       <h1>Cashea checkout</h1>
-      <p id="status" class="muted" role="status">Log in to view your credit line.</p>
+      <output id="status" class="muted">Log in to view your credit line.</output>
       <p id="error" class="error" role="alert"></p>
 
       <form id="login-form">
@@ -66,7 +66,10 @@
       const error = (message = "") => { $("error").textContent = message; };
       const busy = (button, value) => { button.disabled = value; $("status").textContent = value ? "Loading…" : ""; };
       async function request(url, options = {}) {
-        const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
+        const headers = new Headers(options.headers);
+        headers.set("Content-Type", "application/json");
+        if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+        const response = await fetch(url, { ...options, headers });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.error || "Request failed");
         return body;
