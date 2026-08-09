@@ -106,7 +106,7 @@ La cuota 1 se liquida en la misma transacción que crea la compra, reusando la l
 
 ### Autenticación y autorización
 
-JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
+JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. `authenticate` permanece dentro de `src/insecure/auth.ts`, como exige el challenge, y las rutas lo importan desde ahí. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
 
 ### Medio de pago
 

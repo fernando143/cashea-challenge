@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const authSource = readFileSync(new URL("../../src/insecure/auth.ts", import.meta.url), "utf8");
-const middlewareSource = readFileSync(new URL("../../src/middleware/authenticate.ts", import.meta.url), "utf8");
 
 describe("security regressions", () => {
   it("keeps authentication signature-verified and identity-bound", () => {
-    expect(middlewareSource).toContain("jwt.verify");
-    expect(middlewareSource).not.toContain("jwt.decode");
+    expect(authSource).toContain("export const authenticate");
+    expect(authSource).toContain("jwt.verify");
+    expect(authSource).not.toContain("jwt.decode");
     expect(authSource).toContain("env.jwtSecret");
     expect(authSource).not.toContain("req.query.userId");
   });
