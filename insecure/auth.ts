@@ -46,7 +46,7 @@ function authenticate(req: any, res: any, next: any) {
 router.get("/credit-line", authenticate, async (req: any, res) => {
   const userId = req.userId;
   const result = await db.query(
-    `SELECT credit_limit, available_credit, card_number FROM credit_lines WHERE user_id = $1`,
+    `SELECT credit_limit, available_credit FROM credit_lines WHERE user_id = $1`,
     [userId]
   );
   return res.json(result.rows[0]);
