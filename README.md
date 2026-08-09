@@ -34,8 +34,8 @@ credenciales fallback en `docker-compose.yml`.
 - `npm run test:unit` — tests unitarios.
 - `npm run test:integration` — tests contra PostgreSQL real, no mocks (ver `DESIGN.md` → Testing).
 - `npm run test:coverage` — suite con cobertura.
-- `npm run lint` — chequeo estático TypeScript (sin agregar un linter que no
-  aporta reglas al challenge).
+- `npm run lint` — ESLint sobre el código fuente y los tests.
+- `npm run typecheck` — chequeo estático de TypeScript.
 
 Para integración, copiar `.env.test.example` a `.env.test` y mantener
 `PGDATABASE=cashea_test`. El hook `pretest:integration` crea esa base si no
