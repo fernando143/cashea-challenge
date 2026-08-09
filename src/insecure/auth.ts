@@ -2,8 +2,8 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { db } from "./db";
-import { env } from "../src/config/env";
+import { db } from "../config/db";
+import { env } from "../config/env";
 
 const router = express.Router();
 
