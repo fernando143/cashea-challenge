@@ -1,11 +1,11 @@
-import { assertPositiveCents, sumCents, toCents, type Cents, type CentsInput } from "./money";
+import { assertPositiveCents, sumCents, toCents, type CentsInput } from "./money";
 
 export const SUPPORTED_INSTALLMENTS = [3, 6, 12] as const;
 export type InstallmentCount = (typeof SUPPORTED_INSTALLMENTS)[number];
 
 export interface InstallmentPlanItem {
   number: number;
-  amount: Cents;
+  amount: bigint;
   dueDate: string;
 }
 
@@ -30,7 +30,7 @@ export function assertInstallmentCount(value: unknown): asserts value is Install
 export function splitInstallments(
   amountInput: CentsInput,
   installmentsInput: unknown,
-): Cents[] {
+): bigint[] {
   const amount = toCents(amountInput);
   assertInstallmentCount(installmentsInput);
   assertPositiveCents(amount);
@@ -42,15 +42,16 @@ export function splitInstallments(
 
   const base = amount / installments;
   const remainder = amount % installments;
-  return Array.from({ length: installmentsInput }, (_, index) =>
-    base + (BigInt(index) < remainder ? 1n : 0n),
-  );
+  return Array.from({ length: installmentsInput }, (_, index) => {
+    const receivesExtraCent = BigInt(index) < remainder;
+    return base + (receivesExtraCent ? 1n : 0n);
+  });
 }
 
 function asUtcDate(value: Date | string): Date {
   const date =
     value instanceof Date
-      ? new Date(value.getTime())
+      ? new Date(value)
       : new Date(
           /^\d{4}-\d{2}-\d{2}$/.test(value)
             ? `${value}T00:00:00.000Z`

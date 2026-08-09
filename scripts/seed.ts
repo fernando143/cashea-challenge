@@ -5,15 +5,15 @@ import { loadEnvFile, pgConfig } from "./env";
 const demoUserId = "00000000-0000-4000-8000-000000000001";
 const demoCreditLineId = "00000000-0000-4000-8000-000000000002";
 const demoPaymentMethodId = "00000000-0000-4000-8000-000000000003";
-const demoEmail = "demo@cashea.local";
-const demoPassword = "CasheaDemo!2026";
-const demoPasswordHash = bcrypt.hashSync(
-  demoPassword,
-  "$2b$12$0123456789abcdef012345",
-);
 
 async function main(): Promise<void> {
   loadEnvFile(process.env.PGDATABASE === "cashea_test" ? ".env.test" : ".env");
+  const demoEmail = process.env.SEED_EMAIL;
+  const demoPassword = process.env.SEED_PASSWORD;
+  if (!demoEmail || !demoPassword) {
+    throw new Error("SEED_EMAIL and SEED_PASSWORD environment variables are required");
+  }
+  const demoPasswordHash = bcrypt.hashSync(demoPassword, 12);
   const pool = new Pool(pgConfig());
   const client = await pool.connect();
   try {

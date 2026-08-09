@@ -19,7 +19,7 @@ Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revis
 
 `.env` es la única fuente de configuración del runtime. La aplicación y
 Postgres consumen `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
-`PORT`, `NODE_ENV` y `JWT_SECRET`; no se usa `DATABASE_URL` ni se mantienen
+`PORT`, `NODE_ENV`, `JWT_SECRET`, `SEED_EMAIL` y `SEED_PASSWORD`; no se usa `DATABASE_URL` ni se mantienen
 credenciales fallback en `docker-compose.yml`.
 
 ### Tests
@@ -42,7 +42,8 @@ Los comandos de migración y seed también usan las variables `PG*` individuales
 
 ### Credenciales de prueba
 
-- Email y password del usuario semilla: ver salida del script `npm run seed`.
+- El email y password del usuario semilla salen de `SEED_EMAIL` y
+  `SEED_PASSWORD` en `.env`; el password nunca se guarda en el código fuente.
 
 ## mejoras para v2
 

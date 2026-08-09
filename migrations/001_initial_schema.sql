@@ -59,10 +59,7 @@ CREATE TABLE installments (
   paid_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT installments_unique_number UNIQUE (purchase_id, number),
-  CONSTRAINT installments_paid_timestamp CHECK (
-    (status = 'paid' AND paid_at IS NOT NULL) OR
-    (status = 'pending' AND paid_at IS NULL)
-  )
+  CONSTRAINT installments_paid_timestamp CHECK ((status = 'paid') = (paid_at IS NOT NULL))
 );
 
 CREATE TABLE idempotency_keys (
