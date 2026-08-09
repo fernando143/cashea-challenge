@@ -49,14 +49,15 @@ export function splitInstallments(
 }
 
 function asUtcDate(value: Date | string): Date {
-  const date =
-    value instanceof Date
-      ? new Date(value)
-      : new Date(
-          /^\d{4}-\d{2}-\d{2}$/.test(value)
-            ? `${value}T00:00:00.000Z`
-            : value,
-        );
+  let date: Date;
+  if (value instanceof Date) {
+    date = new Date(value);
+  } else {
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? `${value}T00:00:00.000Z`
+      : value;
+    date = new Date(normalized);
+  }
   if (Number.isNaN(date.getTime())) {
     throw new RangeError("purchaseDate must be a valid date");
   }
