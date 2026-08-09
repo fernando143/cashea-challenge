@@ -22,9 +22,16 @@ router.post("/login", async (req, res) => {
 // Middleware de autenticación
 function authenticate(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(" ")[1];
-  const decoded = jwt.decode(token);
-  req.userId = decoded?.userId;
-  next();
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    req.userId = decoded.userId;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 }
 
 // Consulta de línea de crédito
