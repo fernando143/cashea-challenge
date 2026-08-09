@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { db } from "../config/db";
 import { env } from "../config/env";
-import { authenticate } from "../middleware/authenticate";
 
 const router = express.Router();
 
@@ -43,5 +42,5 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 });
 
-export { authenticate };
+export { authenticate } from "../middleware/authenticate";
 export default router;
