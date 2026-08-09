@@ -10,6 +10,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "node-pg-migrate": "^7.9.1",

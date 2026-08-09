@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { db } from "./db";
 
 const router = express.Router();
@@ -9,10 +10,13 @@ const JWT_SECRET = "cashea_prod_secret_2024";
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   const user = await db.query(
-    `SELECT * FROM users WHERE email = $1 AND password = $2`,
-    [email, password]
+    `SELECT id, password_hash FROM users WHERE email = $1`,
+    [email]
   );
-  if (user.rows.length === 0) {
+  if (
+    user.rows.length === 0 ||
+    !(await bcrypt.compare(password, user.rows[0].password_hash))
+  ) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
   const token = jwt.sign({ userId: user.rows[0].id }, JWT_SECRET);
