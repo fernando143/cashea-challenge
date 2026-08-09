@@ -29,14 +29,23 @@ jobs:
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: cp .env.test.example .env.test
+      - run: touch .env.test
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:integration
-      - run: npm run test:coverage
+      - run: npm run test:coverage:ci
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
       - run: npm run build
