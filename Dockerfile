@@ -13,6 +13,7 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
+COPY frontend ./frontend
 
 EXPOSE 3000
 CMD ["npm", "start"]
