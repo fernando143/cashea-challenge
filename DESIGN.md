@@ -80,6 +80,7 @@ Uno por usuario, semilla fija preaprobada.
 - **PostgreSQL**: ACID para transacciones multi-tabla, updates condicionales atómicos para la concurrencia, modelo relacional que encaja con la cadena de entidades.
 - **Sin ORM**: SQL parametrizado vía `pg`, control total sobre las queries críticas.
 - **Migraciones versionadas** (`.up.sql`/`.down.sql`), no un `init.sql` único — el schema iteró durante el desarrollo.
+- **Cliente de Postgres en `src/config/db.ts`, no dentro de `src/insecure/`** — al integrar el módulo corregido de la Parte 3 vino acoplado a una conexión a la base propia; se movió a la capa transversal de config porque el resto de los endpoints (compras, cuotas, pagos) también la necesitan, no es exclusiva de auth.
 
 ## Decisiones de diseño
 
