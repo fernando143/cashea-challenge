@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   verify:
@@ -47,10 +46,9 @@ jobs:
       - run: npm run test:integration
       - run: npm run test:coverage:ci
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: true
-          slug: fernando143/cashea-challenge
-          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
       - run: npm run build
