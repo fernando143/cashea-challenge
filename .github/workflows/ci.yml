@@ -51,5 +51,6 @@ jobs:
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: true
+          slug: fernando143/cashea-challenge
           use_oidc: true
       - run: npm run build
