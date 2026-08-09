@@ -106,7 +106,7 @@ La cuota 1 se liquida en la misma transacción que crea la compra, reusando la l
 
 ### Autenticación y autorización
 
-JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
+JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. `authenticate` permanece dentro de `src/insecure/auth.ts`, como exige el challenge, y las rutas lo importan desde ahí. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
 
 ### Medio de pago
 
@@ -118,7 +118,7 @@ Logging estructurado con ID de correlación en los flujos de dinero — requisit
 
 ## Frontend
 
-HTML+fetch, sin framework — la Parte 2 pide explícitamente no invertir tiempo en diseño visual. Flujo: login → ver crédito → simular compra (preview) → confirmar → reflejar nuevo disponible, con manejo de carga, error y crédito insuficiente.
+HTML+fetch, sin framework — la Parte 2 pide explícitamente no invertir tiempo en diseño visual. `src/app.ts` sirve `frontend/index.html` como estático desde la misma aplicación. Flujo: login → ver crédito → simular compra (preview) → confirmar → reflejar nuevo disponible, con manejo de carga, error y crédito insuficiente. La confirmación solo aparece después de un preview válido.
 
 ## Testing
 
@@ -126,7 +126,7 @@ Unit tests sobre la lógica de negocio, especialmente la que mueve dinero. Test 
 
 ## CI y calidad
 
-Agregado propio, no pedido por el enunciado: GitHub Actions (lint + tests + cobertura + SonarCloud) en cada push, Codecov, todo dockerizado. Sin despliegue.
+Agregado propio, no pedido por el enunciado: GitHub Actions en cada push y pull request (`lint`, tests unitarios, integración contra PostgreSQL, cobertura unitaria y build). No se agrega SonarCloud/Codecov ni despliegue: para este challenge el reporte local de Vitest y la verificación reproducible son suficientes.
 
 ## Riesgos y casos difíciles identificados
 
