@@ -16,6 +16,8 @@ Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revis
 3. Correr las migraciones desde el host: `PGHOST=localhost npm run migrate:up`.
 4. Sembrar datos de prueba desde el host: `PGHOST=localhost npm run seed` — crea un usuario con credenciales conocidas y una línea de crédito, para poder loguearse desde el frontend.
 5. Verificar el servicio: `curl http://localhost:3000/health`.
+6. Abrir `http://localhost:3000/` para usar el frontend mínimo de login,
+   simulación y confirmación.
 
 `.env` es la única fuente de configuración del runtime. La aplicación y
 Postgres consumen `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
@@ -24,10 +26,12 @@ credenciales fallback en `docker-compose.yml`.
 
 ### Tests
 
-- `npm test` — suite Vitest completa.
+- `npm test` — tests unitarios (seguros para ejecutar sin una base local).
 - `npm run test:unit` — tests unitarios.
 - `npm run test:integration` — tests contra PostgreSQL real, no mocks (ver `DESIGN.md` → Testing).
 - `npm run test:coverage` — suite con cobertura.
+- `npm run lint` — chequeo estático TypeScript (sin agregar un linter que no
+  aporta reglas al challenge).
 
 Para integración, copiar `.env.test.example` a `.env.test` y mantener
 `PGDATABASE=cashea_test`. El hook `pretest:integration` crea esa base si no
@@ -39,6 +43,13 @@ Los comandos de migración y seed también usan las variables `PG*` individuales
 - `npm run migrate:up`
 - `npm run migrate:down`
 - `npm run seed`
+
+### CI
+
+GitHub Actions ejecuta en cada push y pull request `lint`, tests unitarios,
+tests de integración contra un servicio PostgreSQL efímero, cobertura de la
+capa unitaria y `build`. La integración siempre usa `cashea_test`; nunca usa
+la base de desarrollo.
 
 ### Credenciales de prueba
 
