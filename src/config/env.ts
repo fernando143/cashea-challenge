@@ -1,14 +1,24 @@
 /**
  * Centralized environment configuration.
- * Values are read once at startup; no validation library yet since this step
- * only needs PORT for the health check. DB connection vars (PGHOST, PGPORT,
+ * Values are read once at startup; no validation library yet, just
+ * `requireEnv` for vars that must be present (throws early instead of
+ * failing later with an unclear error). DB connection vars (PGHOST, PGPORT,
  * PGUSER, PGPASSWORD, PGDATABASE) are declared in .env.example for
  * docker-compose wiring and will be consumed individually by `pg.Pool` once
  * the data layer is implemented — no DATABASE_URL string, those vars are the
  * single source of truth for the connection.
  */
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required`);
+  }
+  return value;
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 3000),
   nodeEnv: process.env.NODE_ENV ?? "development",
+  jwtSecret: requireEnv("JWT_SECRET"),
 };

@@ -3,12 +3,9 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { db } from "./db";
+import { env } from "../src/config/env";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET environment variable is required");
-}
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -30,7 +27,7 @@ router.post("/login", loginLimiter, async (req, res) => {
   ) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
-  const token = jwt.sign({ userId: user.rows[0].id }, JWT_SECRET, {
+  const token = jwt.sign({ userId: user.rows[0].id }, env.jwtSecret, {
     expiresIn: "15m",
   });
   return res.json({ token });
@@ -43,7 +40,10 @@ function authenticate(req: any, res: any, next: any) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    const decoded = jwt.verify(token, env.jwtSecret);
+    if (typeof decoded === "string" || typeof decoded.userId !== "number") {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     req.userId = decoded.userId;
     next();
   } catch {
