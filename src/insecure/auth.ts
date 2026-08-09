@@ -17,20 +17,25 @@ const loginLimiter = rateLimit({
 // Login
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
-  const user = await db.query(
-    `SELECT id, password_hash FROM users WHERE email = $1`,
-    [email]
-  );
-  if (
-    user.rows.length === 0 ||
-    !(await bcrypt.compare(password, user.rows[0].password_hash))
-  ) {
-    return res.status(401).json({ error: "Invalid credentials" });
+  try {
+    const user = await db.query(
+      `SELECT id, password_hash FROM users WHERE email = $1`,
+      [email]
+    );
+    if (
+      user.rows.length === 0 ||
+      !(await bcrypt.compare(password, user.rows[0].password_hash))
+    ) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const token = jwt.sign({ userId: user.rows[0].id }, env.jwtSecret, {
+      expiresIn: "15m",
+    });
+    return res.json({ token });
+  } catch (err) {
+    console.error("Error in POST /login", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
-  const token = jwt.sign({ userId: user.rows[0].id }, env.jwtSecret, {
-    expiresIn: "15m",
-  });
-  return res.json({ token });
 });
 
 // Middleware de autenticación
@@ -54,11 +59,16 @@ function authenticate(req: any, res: any, next: any) {
 // Consulta de línea de crédito
 router.get("/credit-line", authenticate, async (req: any, res) => {
   const userId = req.userId;
-  const result = await db.query(
-    `SELECT credit_limit, available_credit FROM credit_lines WHERE user_id = $1`,
-    [userId]
-  );
-  return res.json(result.rows[0]);
+  try {
+    const result = await db.query(
+      `SELECT credit_limit, available_credit FROM credit_lines WHERE user_id = $1`,
+      [userId]
+    );
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error in GET /credit-line", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;
