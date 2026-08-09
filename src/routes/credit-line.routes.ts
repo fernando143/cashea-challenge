@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/authenticate";
+import { authenticate } from "../insecure/auth";
 import { getCreditLineController } from "../controllers/credit-line.controller";
 
 export const creditLineRouter = Router();
