@@ -16,14 +16,14 @@ const PASSWORD_HASH = bcrypt.hashSync(PASSWORD, "$2b$12$0123456789abcdef012345")
 let baseUrl = "";
 let server: ReturnType<ReturnType<typeof createApp>["listen"]>;
 
-type ApiResult = { status: number; body: Record<string, any>; headers: Headers };
+type ApiResult = { status: number; body: Record<string, unknown>; headers: Headers };
 
 async function api(path: string, options: RequestInit = {}): Promise<ApiResult> {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers ?? {}) },
   });
-  const body = (await response.json().catch(() => ({}))) as Record<string, any>;
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: response.status, body, headers: response.headers };
 }
 

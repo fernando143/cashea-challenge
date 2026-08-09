@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import { db } from "../config/db";
 import { env } from "../config/env";
 
+/* eslint-disable @typescript-eslint/no-namespace -- Express requires namespace augmentation for request context. */
 declare global {
   namespace Express {
     interface Request {
@@ -12,6 +13,7 @@ declare global {
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-namespace */
 
 export type AuthenticatedRequest = Request & { userId: string };
 
