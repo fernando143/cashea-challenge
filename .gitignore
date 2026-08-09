@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .env
+.env.test
 *.log
 .DS_Store
 coverage/
+# Local AI runtime state
+.atl/
+.codegraph/

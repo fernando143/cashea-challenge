@@ -7,7 +7,17 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "migrate:up": "tsx scripts/migrate.ts up",
+    "migrate:down": "tsx scripts/migrate.ts down",
+    "seed": "tsx scripts/seed.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run tests/unit",
+    "pretest:integration": "node --env-file=.env.test ./node_modules/tsx/dist/cli.mjs scripts/test-db.ts",
+    "test:integration": "node --env-file=.env.test ./node_modules/vitest/vitest.mjs run tests/integration --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -23,6 +33,7 @@
     "@types/node": "^20.17.10",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
   }
 }
