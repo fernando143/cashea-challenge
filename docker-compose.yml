@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    networks:
+      - cashea
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${PGUSER:-cashea}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-cashea}
+      POSTGRES_DB: ${PGDATABASE:-cashea}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cashea_pgdata:/var/lib/postgresql/data
+    networks:
+      - cashea
+
+volumes:
+  cashea_pgdata:
+
+networks:
+  cashea:
