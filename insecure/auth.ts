@@ -1,6 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { db } from "./db";
 
 const router = express.Router();
@@ -9,8 +10,15 @@ if (!JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required");
 }
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   const user = await db.query(
     `SELECT id, password_hash FROM users WHERE email = $1`,
