@@ -4,9 +4,9 @@
  * `requireEnv` for vars that must be present (throws early instead of
  * failing later with an unclear error). DB connection vars (PGHOST, PGPORT,
  * PGUSER, PGPASSWORD, PGDATABASE) are declared in .env.example for
- * docker-compose wiring and will be consumed individually by `pg.Pool` once
- * the data layer is implemented — no DATABASE_URL string, those vars are the
- * single source of truth for the connection.
+ * docker-compose wiring and are consumed individually by the shared `pg.Pool` —
+ * no DATABASE_URL string, those vars are the single source of truth for the
+ * connection.
  */
 
 function requireEnv(name: string): string {

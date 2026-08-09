@@ -1,5 +1,9 @@
 # Cashea — Take-Home Challenge
 
+[![CI](https://github.com/fernando143/cashea-challenge/actions/workflows/ci.yml/badge.svg)](https://github.com/fernando143/cashea-challenge/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=fernando143_cashea-challenge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=fernando143_cashea-challenge)
+[![codecov](https://codecov.io/gh/fernando143/cashea-challenge/branch/main/graph/badge.svg)](https://codecov.io/gh/fernando143/cashea-challenge)
+
 Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revisión de seguridad de `insecure/auth.ts` corregida. Detalle de las decisiones de diseño en [`DESIGN.md`](./DESIGN.md), hallazgos de seguridad en [`SECURITY_REVIEW.md`](./SECURITY_REVIEW.md).
 
 ## Cómo correr todo
@@ -16,6 +20,8 @@ Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revis
 3. Correr las migraciones desde el host: `PGHOST=localhost npm run migrate:up`.
 4. Sembrar datos de prueba desde el host: `PGHOST=localhost npm run seed` — crea un usuario con credenciales conocidas y una línea de crédito, para poder loguearse desde el frontend.
 5. Verificar el servicio: `curl http://localhost:3000/health`.
+6. Abrir `http://localhost:3000/` para usar el frontend mínimo de login,
+   simulación y confirmación.
 
 `.env` es la única fuente de configuración del runtime. La aplicación y
 Postgres consumen `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
@@ -24,10 +30,12 @@ credenciales fallback en `docker-compose.yml`.
 
 ### Tests
 
-- `npm test` — suite Vitest completa.
+- `npm test` — tests unitarios (seguros para ejecutar sin una base local).
 - `npm run test:unit` — tests unitarios.
 - `npm run test:integration` — tests contra PostgreSQL real, no mocks (ver `DESIGN.md` → Testing).
 - `npm run test:coverage` — suite con cobertura.
+- `npm run lint` — ESLint sobre el código fuente y los tests.
+- `npm run typecheck` — chequeo estático de TypeScript.
 
 Para integración, copiar `.env.test.example` a `.env.test` y mantener
 `PGDATABASE=cashea_test`. El hook `pretest:integration` crea esa base si no
@@ -39,6 +47,13 @@ Los comandos de migración y seed también usan las variables `PG*` individuales
 - `npm run migrate:up`
 - `npm run migrate:down`
 - `npm run seed`
+
+### CI
+
+GitHub Actions ejecuta en cada push y pull request `lint`, tests unitarios,
+tests de integración contra un servicio PostgreSQL efímero, cobertura de la
+capa unitaria y `build`. La integración siempre usa `cashea_test`; nunca usa
+la base de desarrollo.
 
 ### Credenciales de prueba
 
