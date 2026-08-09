@@ -4,7 +4,10 @@ import bcrypt from "bcryptjs";
 import { db } from "./db";
 
 const router = express.Router();
-const JWT_SECRET = "cashea_prod_secret_2024";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
 
 // Login
 router.post("/login", async (req, res) => {
