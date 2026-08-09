@@ -13,9 +13,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${PGUSER:-cashea}
-      POSTGRES_PASSWORD: ${PGPASSWORD:-cashea}
-      POSTGRES_DB: ${PGDATABASE:-cashea}
+      POSTGRES_USER: ${PGUSER:?PGUSER must be set in .env}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?PGPASSWORD must be set in .env}
+      POSTGRES_DB: ${PGDATABASE:?PGDATABASE must be set in .env}
     ports:
       - "5432:5432"
     volumes:
