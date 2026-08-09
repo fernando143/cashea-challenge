@@ -1,5 +1,9 @@
 # Cashea — Take-Home Challenge
 
+[![CI](https://github.com/fernando143/cashea-challenge/actions/workflows/ci.yml/badge.svg)](https://github.com/fernando143/cashea-challenge/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=fernando143_cashea-challenge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=fernando143_cashea-challenge)
+[![codecov](https://codecov.io/gh/fernando143/cashea-challenge/branch/main/graph/badge.svg)](https://codecov.io/gh/fernando143/cashea-challenge)
+
 Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revisión de seguridad de `insecure/auth.ts` corregida. Detalle de las decisiones de diseño en [`DESIGN.md`](./DESIGN.md), hallazgos de seguridad en [`SECURITY_REVIEW.md`](./SECURITY_REVIEW.md).
 
 ## Cómo correr todo
