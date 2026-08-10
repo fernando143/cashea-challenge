@@ -107,6 +107,17 @@ Update condicional atómico (`available >= :amount` en el `WHERE`) como primer p
 
 `Idempotency-Key` en pagar cuota y crear compra, con el registro en la misma transacción que el movimiento de dinero — evita guardar una respuesta de éxito para una operación que en realidad hizo rollback. Se descartó Redis: un store separado del Postgres transaccional rompe esa atomicidad, y resuelve un problema de escala que este challenge no tiene.
 
+Por simplicidad, el frontend es responsable de la intención de compra en este
+challenge: genera una sola clave aleatoria por combinación normalizada de monto y
+cuotas, y persiste en `localStorage` la clave junto con el usuario y el fingerprint
+del request. La misma intención recupera la clave después de recargar o volver a
+previsualizar; se elimina al cambiar el formulario o el usuario, cerrar sesión y
+apenas la creación de la compra confirma éxito. `localStorage` es una dependencia
+requerida del flujo: sus fallos se propagan y no existe un fallback en memoria. En
+producción, el backend debería crear y poseer la intención mediante un `checkout
+session id`: evita confiar este lifecycle a un único cliente y permite coordinar
+reintentos, múltiples dispositivos y expiración centralizada.
+
 ### Compra, cuotas y pagos
 
 La cuota 1 se liquida en la misma transacción que crea la compra, reusando la lógica de pago — el disponible que ve el usuario refleja solo lo pendiente. Vencimiento mensual anclado a la fecha de compra. Cuota ya pagada se rechaza (409). Sin pago parcial ni restricción de orden entre cuotas. Monto mínimo validado contra la cantidad de cuotas, para evitar cuotas de valor cero al repartir.
@@ -135,8 +146,15 @@ HTML+fetch con módulos JavaScript, sin framework — la Parte 2 pide
 explícitamente no invertir tiempo en diseño visual. `src/app.ts` sirve
 `frontend/` como estático desde la misma aplicación. Flujo: login → ver crédito
 → simular compra → confirmar → reflejar el disponible. El cliente conserva una
-clave idempotente por intención ante resultados inciertos, invalida la intención
-cuando cambia el formulario o el usuario y es la única capa que formatea moneda.
+clave idempotente persistida por intención ante resultados inciertos, invalida la
+intención cuando cambia el formulario o el usuario, cierra la sesión de forma
+explícita y bloquea transiciones mientras confirma una compra. Es también la única
+capa que formatea moneda. La coordinación se divide en `SessionController`
+(login, logout, token, usuario y crédito) y `CheckoutController` (preview,
+intención persistida y confirmación); `CheckoutPageController` sólo los compone
+para la página. Así cada controller tiene una única razón de cambio y el lock de
+interacción compartido evita duplicar la regla de no cambiar sesión durante una
+confirmación.
 
 ## Testing
 

@@ -19,7 +19,7 @@ describe("frontend API client", () => {
     });
   });
 
-  it("adds a stable fallback code only for the immutable login endpoint", async () => {
+  it("does not invent an error code when the API omits it", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new globalThis.Response(JSON.stringify({ error: "Invalid credentials" }), {
         status: 401,
@@ -28,9 +28,34 @@ describe("frontend API client", () => {
     );
 
     await expect(createApiClient({ fetchImpl }).login({ email: "a@b.c", password: "wrong" })).rejects.toMatchObject({
-      code: "AUTHENTICATION_FAILED",
+      message: "Invalid credentials",
+      code: null,
       status: 401,
     });
+  });
+
+  it("rejects invalid JSON error bodies instead of using defaults", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new globalThis.Response("{", {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(createApiClient({ fetchImpl }).getCreditLine("token-1")).rejects.toBeInstanceOf(SyntaxError);
+  });
+
+  it("rejects error bodies that violate the API contract instead of using defaults", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new globalThis.Response(JSON.stringify({ code: "INTERNAL_ERROR" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(createApiClient({ fetchImpl }).getCreditLine("token-1")).rejects.toThrow(
+      new TypeError("Invalid API error response"),
+    );
   });
 
   it("distinguishes an uncertain network outcome from an HTTP response", async () => {
