@@ -8,14 +8,10 @@ export class ApiError extends Error {
   }
 }
 
-async function responseBody(response) {
-  return response.json().catch(() => ({}));
-}
-
 export function createApiClient({ fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
 
-  async function request(path, { token, fallbackCode = null, ...options } = {}) {
+  async function request(path, { token, ...options } = {}) {
     const headers = new Headers(options.headers);
     headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -30,12 +26,21 @@ export function createApiClient({ fetchImpl = globalThis.fetch } = {}) {
       });
     }
 
-    const body = await responseBody(response);
+    const body = await response.json();
     if (!response.ok) {
-      const errorBody = body && typeof body === "object" ? body : {};
-      throw new ApiError(errorBody.error || "Request failed", {
+      if (
+        body === null ||
+        typeof body !== "object" ||
+        Array.isArray(body) ||
+        typeof body.error !== "string" ||
+        ("code" in body && body.code !== null && typeof body.code !== "string")
+      ) {
+        throw new TypeError("Invalid API error response");
+      }
+
+      throw new ApiError(body.error, {
         status: response.status,
-        code: errorBody.code || fallbackCode,
+        code: body.code ?? null,
         retryAfter: response.headers.get("Retry-After"),
       });
     }
@@ -47,7 +52,6 @@ export function createApiClient({ fetchImpl = globalThis.fetch } = {}) {
       return request("/login", {
         method: "POST",
         body: JSON.stringify(credentials),
-        fallbackCode: "AUTHENTICATION_FAILED",
       });
     },
     getCreditLine(token) {

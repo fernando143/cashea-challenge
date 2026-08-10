@@ -10,6 +10,22 @@ export function createDomView(document, formatMoney) {
     preview: element("preview-button"),
     confirm: element("confirm-button"),
   };
+  const logoutButton = element("logout-button");
+  const inputs = {
+    login: [...element("login-form").querySelectorAll("input")],
+    purchase: [element("amount"), element("installments")],
+  };
+  const busyState = { login: false, preview: false, confirm: false };
+  let interactionLocked = false;
+
+  function updateDisabledState() {
+    buttons.login.disabled = interactionLocked || busyState.login;
+    buttons.preview.disabled = interactionLocked || busyState.preview;
+    buttons.confirm.disabled = interactionLocked || busyState.confirm;
+    logoutButton.disabled = interactionLocked;
+    for (const input of inputs.login) input.disabled = interactionLocked;
+    for (const input of inputs.purchase) input.disabled = interactionLocked;
+  }
 
   function clearPreview() {
     element("preview").hidden = true;
@@ -23,7 +39,12 @@ export function createDomView(document, formatMoney) {
 
   return {
     setBusy(action, busy) {
-      buttons[action].disabled = busy;
+      busyState[action] = busy;
+      updateDisabledState();
+    },
+    setInteractionLocked(locked) {
+      interactionLocked = locked;
+      updateDisabledState();
     },
     setStatus(message) {
       element("status").textContent = message;
@@ -81,4 +102,5 @@ export function bindCheckout(document, controller) {
   element("amount").addEventListener("input", controller.invalidatePurchaseIntent);
   element("installments").addEventListener("change", controller.invalidatePurchaseIntent);
   element("confirm-button").addEventListener("click", () => void controller.confirmPurchase());
+  element("logout-button").addEventListener("click", controller.logout);
 }

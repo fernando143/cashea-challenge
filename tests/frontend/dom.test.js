@@ -6,7 +6,7 @@ beforeEach(() => {
   globalThis.document.body.innerHTML = `
     <output id="status"></output><p id="error"></p>
     <form id="login-form"><input id="email" value="demo@cashea.local"><input id="password" value="secret"><button></button></form>
-    <section id="checkout" hidden><strong id="available"></strong><strong id="limit"></strong>
+    <section id="checkout" hidden><strong id="available"></strong><strong id="limit"></strong><button id="logout-button"></button>
       <form id="purchase-form"><input id="amount" value="3000"><select id="installments"><option value="3">3</option></select><button id="preview-button"></button></form>
       <section id="preview" hidden><table><tbody id="plan-rows"></tbody></table><button id="confirm-button"></button></section>
     </section>`;
@@ -43,6 +43,7 @@ describe("checkout DOM adapter", () => {
   it("binds forms and invalidates purchase intent as soon as inputs change", async () => {
     const controller = {
       login: vi.fn(),
+      logout: vi.fn(),
       previewPurchase: vi.fn(),
       confirmPurchase: vi.fn(),
       invalidatePurchaseIntent: vi.fn(),
@@ -54,11 +55,28 @@ describe("checkout DOM adapter", () => {
     globalThis.document.getElementById("login-form").dispatchEvent(new globalThis.Event("submit"));
     globalThis.document.getElementById("purchase-form").dispatchEvent(new globalThis.Event("submit"));
     globalThis.document.getElementById("confirm-button").click();
+    globalThis.document.getElementById("logout-button").click();
     await Promise.resolve();
 
     expect(controller.invalidatePurchaseIntent).toHaveBeenCalledTimes(2);
     expect(controller.login).toHaveBeenCalledWith({ email: "demo@cashea.local", password: "secret" });
     expect(controller.previewPurchase).toHaveBeenCalledWith({ amount: "3000", installments: "3" });
     expect(controller.confirmPurchase).toHaveBeenCalledOnce();
+    expect(controller.logout).toHaveBeenCalledOnce();
+  });
+
+  it("locks every checkout transition while a confirmation is in flight", () => {
+    const view = createDomView(globalThis.document, createMoneyFormatter("en-US"));
+
+    view.setInteractionLocked(true);
+
+    for (const element of globalThis.document.querySelectorAll("button, input, select")) {
+      expect(element.disabled).toBe(true);
+    }
+
+    view.setInteractionLocked(false);
+    for (const element of globalThis.document.querySelectorAll("button, input, select")) {
+      expect(element.disabled).toBe(false);
+    }
   });
 });
