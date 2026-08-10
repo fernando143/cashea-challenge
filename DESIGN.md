@@ -67,11 +67,13 @@ Uno por usuario, semilla fija preaprobada.
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| key | TEXT | PK |
+| id | UUID | PK |
 | user_id | UUID | FK → User |
-| endpoint | TEXT | |
-| response_status | SMALLINT | |
-| response_body | JSONB | |
+| operation | TEXT | `purchase` \| `payment` |
+| key | TEXT | UNIQUE junto a usuario y operación |
+| request_hash | TEXT | evita reusar una clave para otro request |
+| response_code | TEXT | resultado semántico, independiente de HTTP |
+| response_body | JSONB | respuesta persistida para replay |
 | created_at | TIMESTAMPTZ | |
 
 ## Arquitectura y stack
@@ -79,14 +81,23 @@ Uno por usuario, semilla fija preaprobada.
 - **Capas**, no hexagonal — complejidad innecesaria para este tamaño.
 - **PostgreSQL**: ACID para transacciones multi-tabla, updates condicionales atómicos para la concurrencia, modelo relacional que encaja con la cadena de entidades.
 - **Sin ORM**: SQL parametrizado vía `pg`, control total sobre las queries críticas.
-- **Migraciones versionadas** (`.up.sql`/`.down.sql`), no un `init.sql` único — el schema iteró durante el desarrollo.
-- **Cliente de Postgres en `src/config/db.ts`, no dentro de `src/insecure/`** — al integrar el módulo corregido de la Parte 3 vino acoplado a una conexión a la base propia; se movió a la capa transversal de config porque el resto de los endpoints (compras, cuotas, pagos) también la necesitan, no es exclusiva de auth.
+- **Migraciones versionadas** (archivos `.sql` ordenados por timestamp), no un
+  `init.sql` mutable — el schema puede evolucionar sin reescribir el historial.
+- **Límites explícitos entre HTTP, aplicación y persistencia** para compras,
+  cuotas y crédito. `src/insecure/auth.ts` es la única excepción: pertenece al
+  challenge y se conserva sin modificaciones, incluyendo sus queries directas.
 
 ## Decisiones de diseño
 
 ### Dinero
 
-Enteros en centavos (`BIGINT`), no `NUMERIC` — evita depender de una librería de decimales en la capa de negocio para no perder precisión al operar. Reparto de cuotas: cuando no divide exacto, las primeras cuotas absorben el resto, para que la suma cierre siempre contra el monto original.
+La API acepta y devuelve enteros JSON en centavos, nunca strings ni decimales.
+El rango público es `1..99_999_999`, por debajo de `Number.MAX_SAFE_INTEGER` y
+del límite de PostgreSQL. Dominio y repositorios operan con `bigint`/`BIGINT`;
+sólo la presentación del navegador transforma centavos a moneda VES con
+`Intl.NumberFormat`. Reparto de cuotas: cuando no divide exacto, las primeras
+cuotas absorben el resto, para que la suma cierre siempre contra el monto
+original.
 
 ### Concurrencia
 
@@ -102,31 +113,54 @@ La cuota 1 se liquida en la misma transacción que crea la compra, reusando la l
 
 ### API
 
-`GET /purchases/:id` devuelve el detalle con su plan de cuotas. Se agregó `POST /purchases/preview`, sin efectos secundarios, que reusa la misma función de split que la creación real — evita que el plan mostrado antes de confirmar diverja del que efectivamente se crea.
+`GET /purchases/:id` devuelve el detalle con un único campo `plan`.
+`POST /purchases/preview`, sin efectos secundarios, reusa la misma función de split
+que la creación real — evita que el plan mostrado antes de confirmar diverja
+del que efectivamente se crea. La frontera HTTP convierte resultados semánticos
+a status y DTOs; los errores usan `{ error, code }` y nunca exponen HTML, stack
+ni paths internos. `/login` conserva su contrato original porque vive en el
+archivo congelado del challenge.
 
 ### Autenticación y autorización
 
-JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. `authenticate` permanece dentro de `src/insecure/auth.ts`, como exige el challenge, y las rutas lo importan desde ahí. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
+JWT real vía el middleware corregido de la Parte 3, reusado en toda la Parte 1 — no un `userId` de contexto simplificado, que hubiera reproducido el IDOR de la Parte 3 en código propio. `src/insecure/auth.ts` permanece **congelado byte por byte**, como exige el challenge: no se mueve, formatea, envuelve ni adapta aunque mezcle router, middleware, SQL y transporte. Esta excepción no define el patrón para código nuevo. Cada recurso con ID en la URL se filtra por el usuario autenticado directo en la query, sin middleware de autorización aparte; 404 uniforme si no matchea. Access token de vida corta (15 min).
 
 ### Medio de pago
 
 Solo últimos 4 dígitos + marca, nunca el PAN completo — sin librería de tokenización, evitando el problema de raíz en vez de enmascararlo después. Consistente con el hallazgo #7 de `SECURITY_REVIEW.md`.
 
-### Observabilidad
-
-Logging estructurado con ID de correlación en los flujos de dinero — requisito autoimpuesto, el enunciado no lo pide explícitamente.
-
 ## Frontend
 
-HTML+fetch, sin framework — la Parte 2 pide explícitamente no invertir tiempo en diseño visual. `src/app.ts` sirve `frontend/index.html` como estático desde la misma aplicación. Flujo: login → ver crédito → simular compra (preview) → confirmar → reflejar nuevo disponible, con manejo de carga, error y crédito insuficiente. La confirmación solo aparece después de un preview válido.
+HTML+fetch con módulos JavaScript, sin framework — la Parte 2 pide
+explícitamente no invertir tiempo en diseño visual. `src/app.ts` sirve
+`frontend/` como estático desde la misma aplicación. Flujo: login → ver crédito
+→ simular compra → confirmar → reflejar el disponible. El cliente conserva una
+clave idempotente por intención ante resultados inciertos, invalida la intención
+cuando cambia el formulario o el usuario y es la única capa que formatea moneda.
 
 ## Testing
 
-Unit tests sobre la lógica de negocio, especialmente la que mueve dinero. Test de integración contra Postgres real (no mocks) para la concurrencia — es la única forma de probar que el update atómico funciona de verdad.
+`npm test` ejecuta lógica de negocio y cliente en aislamiento, sin variables de
+entorno ni DB. La integración usa Postgres real para concurrencia y
+transacciones. `npm run test:coverage` prepara la base y ejecuta la suite completa
+una sola vez, con un umbral global de 80%.
 
 ## CI y calidad
 
-Agregado propio, no pedido por el enunciado: GitHub Actions en cada push y pull request (`lint`, tests unitarios, integración contra PostgreSQL, cobertura unitaria y build). No se agrega SonarCloud/Codecov ni despliegue: para este challenge el reporte local de Vitest y la verificación reproducible son suficientes.
+GitHub Actions verifica pushes a `main` y pull requests con lint, typecheck de
+fuente/scripts/tests, una ejecución completa con cobertura, build TypeScript y
+build de los targets Docker. LCOV se publica en Codecov. SonarCloud permanece
+como quality gate externo; no forma parte del runtime ni implica despliegue.
+
+## Runtime y migraciones
+
+La imagen usa stages separados. `migrator` contiene `tsx`,
+`node-pg-migrate`, scripts y migraciones; `runtime` contiene sólo dependencias de
+producción, `dist/` y el frontend, y se ejecuta como el usuario no-root `node`.
+Compose espera el healthcheck de PostgreSQL, ejecuta `migrator` como servicio
+one-shot y sólo inicia la aplicación si termina exitosamente. `001` permanece
+intacta; las migraciones nuevas usan nombres con timestamp soportados por
+`node-pg-migrate`.
 
 ## Riesgos y casos difíciles identificados
 
