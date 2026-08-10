@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/app";
+import { db } from "../../src/config/db";
 import { env } from "../../src/config/env";
 import { closeTestDb, testDb, truncateTestTables } from "../helpers/test-db";
 
@@ -85,6 +86,55 @@ describe("Cashea API against PostgreSQL", () => {
     expect(forged.status).toBe(401);
   });
 
+  it("serves health and rejects malformed authentication requests", async () => {
+    const health = await api("/health");
+    const missing = await api("/credit-line");
+    const wrongScheme = await api("/credit-line", { headers: { Authorization: "Basic token" } });
+    const malformedPayload = await api("/credit-line", {
+      headers: auth(jwt.sign({ userId: 123 }, env.jwtSecret)),
+    });
+
+    expect(health).toMatchObject({ status: 200, body: { status: "ok" } });
+    expect(missing.status).toBe(401);
+    expect(wrongScheme.status).toBe(401);
+    expect(malformedPayload.status).toBe(401);
+  });
+
+  it("validates login input and rejects invalid credentials", async () => {
+    const invalidInput = await api("/login", {
+      method: "POST",
+      body: JSON.stringify({ email: 42, password: PASSWORD }),
+    });
+    const invalidPassword = await api("/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "demo@cashea.local", password: "wrong-password" }),
+    });
+
+    expect(invalidInput).toMatchObject({
+      status: 400,
+      body: { error: "email and password are required" },
+    });
+    expect(invalidPassword).toMatchObject({
+      status: 401,
+      body: { error: "Invalid credentials" },
+    });
+  });
+
+  it("returns a generic error when login cannot reach the database", async () => {
+    const querySpy = vi.spyOn(db, "query").mockRejectedValueOnce(new Error("database unavailable"));
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const result = await api("/login", {
+        method: "POST",
+        body: JSON.stringify({ email: "demo@cashea.local", password: PASSWORD }),
+      });
+      expect(result).toMatchObject({ status: 500, body: { error: "Internal server error" } });
+    } finally {
+      querySpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  });
+
   it("previews an exact plan without changing available credit", async () => {
     const before = await api("/credit-line", { headers: auth() });
     const preview = await api("/purchases/preview", {
@@ -97,6 +147,28 @@ describe("Cashea API against PostgreSQL", () => {
     expect(preview.status).toBe(200);
     expect(preview.body.plan.map((item: { amount: number }) => item.amount)).toEqual([3334, 3334, 3333]);
     expect(after.body).toEqual(before.body);
+  });
+
+  it("rejects incomplete and invalid purchase previews", async () => {
+    const incomplete = await api("/purchases/preview", {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({}),
+    });
+    const invalid = await api("/purchases/preview", {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({ amount: 0, installments: 3 }),
+    });
+    const tooSmall = await api("/purchases/preview", {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({ amount: 2, installments: 3 }),
+    });
+
+    expect(incomplete).toMatchObject({ status: 400, body: { error: "amount and installments are required" } });
+    expect(invalid).toMatchObject({ status: 400, body: { error: "amount must be greater than zero" } });
+    expect(tooSmall).toMatchObject({ status: 400, body: { error: "amount must be at least the number of installments" } });
   });
 
   it("creates a purchase, returns its plan, and replays the idempotency key", async () => {
@@ -116,6 +188,41 @@ describe("Cashea API against PostgreSQL", () => {
     expect(replay).toMatchObject({ status: 201, body: created.body });
     expect(created.body.available).toBe(93334);
     expect(created.body.purchase.installmentsPlan[0].status).toBe("paid");
+
+    const detail = await api(`/purchases/${created.body.purchase.id}`, { headers: auth() });
+    expect(detail).toMatchObject({ status: 200, body: { id: created.body.purchase.id } });
+  });
+
+  it("rejects missing idempotency keys and malformed purchase ids", async () => {
+    const missingKey = await api("/purchases", {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({ amount: 10000, installments: 3 }),
+    });
+    const malformedId = await api("/purchases/not-a-uuid", { headers: auth() });
+
+    expect(missingKey).toMatchObject({ status: 400, body: { error: "Idempotency-Key header is required" } });
+    expect(malformedId).toMatchObject({ status: 404, body: { error: "Purchase not found" } });
+  });
+
+  it("rejects purchases that exceed credit and preserves credit without a payment method", async () => {
+    const insufficient = await api("/purchases", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "insufficient-credit" },
+      body: JSON.stringify({ amount: 100001, installments: 3 }),
+    });
+
+    await testDb.query("DELETE FROM payment_methods WHERE user_id = $1", [USER_ID]);
+    const noMethod = await api("/purchases", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "missing-method" },
+      body: JSON.stringify({ amount: 10000, installments: 3 }),
+    });
+    const credit = await api("/credit-line", { headers: auth() });
+
+    expect(insufficient).toMatchObject({ status: 409, body: { code: "INSUFFICIENT_CREDIT" } });
+    expect(noMethod).toMatchObject({ status: 409, body: { code: "PAYMENT_METHOD_REQUIRED" } });
+    expect(credit.body.available).toBe(100000);
   });
 
   it("pays a pending installment once and rejects a new duplicate request", async () => {
@@ -144,6 +251,79 @@ describe("Cashea API against PostgreSQL", () => {
     expect(duplicate.status).toBe(409);
   });
 
+  it("rejects missing or malformed payment requests", async () => {
+    const missingKey = await api("/purchases/not-a-uuid/installments/not-a-uuid/pay", {
+      method: "POST",
+      headers: auth(),
+    });
+    const malformedIds = await api("/purchases/not-a-uuid/installments/not-a-uuid/pay", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "invalid-payment" },
+    });
+
+    expect(missingKey).toMatchObject({ status: 400, body: { error: "Idempotency-Key header is required" } });
+    expect(malformedIds).toMatchObject({ status: 404, body: { error: "Installment not found" } });
+  });
+
+  it("returns not found for an installment that does not belong to the purchase", async () => {
+    const purchase = await api("/purchases", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "payment-not-found-purchase" },
+      body: JSON.stringify({ amount: 9000, installments: 3 }),
+    });
+    const missingInstallment = await api(
+      `/purchases/${purchase.body.purchase.id}/installments/00000000-0000-4000-8000-000000000099/pay`,
+      {
+        method: "POST",
+        headers: { ...auth(), "Idempotency-Key": "payment-not-found" },
+      },
+    );
+
+    expect(missingInstallment).toMatchObject({ status: 404, body: { code: "NOT_FOUND" } });
+  });
+
+  it("rejects a payment while the same idempotency operation is in progress", async () => {
+    const purchaseId = "00000000-0000-4000-8000-000000000099";
+    const installmentId = "00000000-0000-4000-8000-000000000098";
+    const key = "payment-in-progress";
+    const hash = JSON.stringify({ purchaseId, installmentId });
+    await testDb.query(
+      `INSERT INTO idempotency_keys (user_id, operation, key, request_hash)
+       VALUES ($1, 'payment', $2, $3)`,
+      [USER_ID, key, hash],
+    );
+
+    const result = await api(`/purchases/${purchaseId}/installments/${installmentId}/pay`, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": key },
+    });
+
+    expect(result).toMatchObject({ status: 409, body: { error: "An operation with this idempotency key is in progress" } });
+  });
+
+  it("rejects payment idempotency key reuse with another installment", async () => {
+    const purchase = await api("/purchases", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "payment-reuse-purchase" },
+      body: JSON.stringify({ amount: 9000, installments: 3 }),
+    });
+    const pending = purchase.body.purchase.installmentsPlan[1];
+    const first = await api(`/purchases/${purchase.body.purchase.id}/installments/${pending.id}/pay`, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "payment-reused" },
+    });
+    const reused = await api(
+      `/purchases/${purchase.body.purchase.id}/installments/00000000-0000-4000-8000-000000000097/pay`,
+      {
+        method: "POST",
+        headers: { ...auth(), "Idempotency-Key": "payment-reused" },
+      },
+    );
+
+    expect(first.status).toBe(200);
+    expect(reused).toMatchObject({ status: 409, body: { error: "Idempotency key was reused with a different request" } });
+  });
+
   it("returns a uniform 404 for a purchase owned by another user", async () => {
     const created = await api("/purchases", {
       method: "POST",
@@ -152,6 +332,48 @@ describe("Cashea API against PostgreSQL", () => {
     });
     const foreign = await api(`/purchases/${created.body.purchase.id}`, { headers: auth(tokenFor(OTHER_USER_ID)) });
     expect(foreign).toMatchObject({ status: 404, body: { error: "Purchase not found" } });
+  });
+
+  it("returns 404 when the authenticated user has no credit line", async () => {
+    await testDb.query("DELETE FROM credit_lines WHERE user_id = $1", [USER_ID]);
+    const result = await api("/credit-line", { headers: auth() });
+
+    expect(result).toMatchObject({ status: 404, body: { error: "Credit line not found" } });
+  });
+
+  it("rejects idempotency key reuse with a different purchase payload", async () => {
+    const headers = { ...auth(), "Idempotency-Key": "reused-payload" };
+    const first = await api("/purchases", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ amount: 10000, installments: 3 }),
+    });
+    const reused = await api("/purchases", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ amount: 11000, installments: 3 }),
+    });
+
+    expect(first.status).toBe(201);
+    expect(reused).toMatchObject({ status: 409, body: { error: "Idempotency key was reused with a different request" } });
+  });
+
+  it("rejects a purchase while the same idempotency operation is in progress", async () => {
+    const key = "in-progress";
+    const hash = JSON.stringify({ amount: "10000", installments: 3 });
+    await testDb.query(
+      `INSERT INTO idempotency_keys (user_id, operation, key, request_hash)
+       VALUES ($1, 'purchase', $2, $3)`,
+      [USER_ID, key, hash],
+    );
+
+    const result = await api("/purchases", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": key },
+      body: JSON.stringify({ amount: 10000, installments: 3 }),
+    });
+
+    expect(result).toMatchObject({ status: 409, body: { error: "An operation with this idempotency key is in progress" } });
   });
 
   it("serializes concurrent purchases without overspending credit", async () => {

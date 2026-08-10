@@ -37,6 +37,11 @@ credenciales fallback en `docker-compose.yml`.
 - `npm run lint` — ESLint sobre el código fuente y los tests.
 - `npm run typecheck` — chequeo estático de TypeScript.
 
+La cobertura de CI instrumenta el runtime de `src/**/*.ts` y exige al menos
+80% en líneas, statements, branches y funciones. Se excluyen el bootstrap de
+`src/server.ts`, los tipos sin runtime de `src/repositories/types.ts` y los
+scripts operativos de `scripts/`.
+
 Para integración, copiar `.env.test.example` a `.env.test` y mantener
 `PGDATABASE=cashea_test`. El hook `pretest:integration` crea esa base si no
 existe y aplica las migraciones. Los tests resetean sus tablas con `TRUNCATE`
