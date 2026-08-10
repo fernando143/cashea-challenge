@@ -42,9 +42,12 @@ export function createSessionController({ api, view, interactionLock, onSessionC
   function logout() {
     if (interactionLock.isLocked()) return;
     revision += 1;
-    onLogout();
-    reset();
-    view.clearError();
+    try {
+      onLogout();
+    } finally {
+      reset();
+      view.clearError();
+    }
   }
 
   return { login, logout, getSession: () => ({ ...state }) };

@@ -6,6 +6,7 @@ import {
   parsePurchaseInput,
 } from "../../frontend/checkout-controller.mjs";
 import { createCheckoutPageController } from "../../frontend/checkout-page-controller.mjs";
+import { PAYMENT_INTENT_STORAGE_KEY } from "../../frontend/purchase-details-controller.mjs";
 
 function deferred() {
   let resolve;
@@ -26,8 +27,12 @@ function createView() {
     resetSession: vi.fn(),
     activateSession: vi.fn(),
     renderCredit: vi.fn(),
+    renderAvailable: vi.fn(),
     clearPreview: vi.fn(),
     renderPreview: vi.fn(),
+    clearPurchase: vi.fn(),
+    renderPurchase: vi.fn(),
+    showPurchaseLink: vi.fn(),
     setInteractionLocked: vi.fn(),
   };
 }
@@ -47,6 +52,8 @@ function createApi() {
     getCreditLine: vi.fn(),
     previewPurchase: vi.fn(),
     createPurchase: vi.fn(),
+    getPurchase: vi.fn(),
+    payInstallment: vi.fn(),
   };
 }
 
@@ -56,6 +63,18 @@ const preview = {
   installments: 3,
   plan: [{ number: 1, amount: 1_000, dueDate: "2026-08-10" }],
 };
+const purchase = {
+  id: "a3f4d5e6-7890-4abc-8def-1234567890ab",
+  amount: 3_000,
+  installments: 3,
+  status: "pending",
+  createdAt: "2026-08-10T12:00:00.000Z",
+  paymentMethod: { brand: "Visa", last4: "4242" },
+  plan: [
+    { id: "installment-1", number: 1, amount: 1_000, dueDate: "2026-08-10", status: "paid", paidAt: "2026-08-10T12:00:00.000Z" },
+    { id: "installment-2", number: 2, amount: 1_000, dueDate: "2026-09-09", status: "pending", paidAt: null },
+  ],
+};
 
 async function login(controller, api, token = "token-1") {
   api.login.mockResolvedValueOnce({ token });
@@ -64,6 +83,210 @@ async function login(controller, api, token = "token-1") {
 }
 
 describe("checkout controller", () => {
+  it("loads a purchase by ID and renders it with the session currency", async () => {
+    const api = createApi();
+    const view = createView();
+    const controller = createCheckoutPageController({ api, view });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+
+    await controller.lookupPurchase(` ${purchase.id} `);
+
+    expect(api.getPurchase).toHaveBeenCalledWith(purchase.id, "token-1");
+    expect(controller.getState().purchase).toEqual(purchase);
+    expect(view.renderPurchase).toHaveBeenCalledWith(purchase, "VES");
+  });
+
+  it("keeps only the latest purchase lookup result", async () => {
+    const api = createApi();
+    const view = createView();
+    const first = deferred();
+    const newerPurchase = { ...purchase, id: "b3f4d5e6-7890-4abc-8def-1234567890ab" };
+    const controller = createCheckoutPageController({ api, view });
+    await login(controller, api);
+    api.getPurchase.mockReturnValueOnce(first.promise).mockResolvedValueOnce(newerPurchase);
+
+    const firstLookup = controller.lookupPurchase(purchase.id);
+    await vi.waitFor(() => expect(api.getPurchase).toHaveBeenCalledOnce());
+    await controller.lookupPurchase(newerPurchase.id);
+    first.resolve(purchase);
+    await firstLookup;
+
+    expect(controller.getState().purchase).toEqual(newerPurchase);
+    expect(view.renderPurchase).toHaveBeenCalledTimes(1);
+    expect(view.renderPurchase).toHaveBeenCalledWith(newerPurchase, "VES");
+  });
+
+  it("discards an in-flight purchase lookup when the user logs out", async () => {
+    const api = createApi();
+    const view = createView();
+    const pendingPurchase = deferred();
+    const controller = createCheckoutPageController({ api, view });
+    await login(controller, api);
+    api.getPurchase.mockReturnValueOnce(pendingPurchase.promise);
+
+    const lookup = controller.lookupPurchase(purchase.id);
+    await vi.waitFor(() => expect(api.getPurchase).toHaveBeenCalledOnce());
+    controller.logout();
+    pendingPurchase.resolve(purchase);
+    await lookup;
+
+    expect(controller.getState().purchase).toBeNull();
+    expect(view.renderPurchase).not.toHaveBeenCalled();
+  });
+
+  it("clears an uncertain payment intent once a refreshed purchase shows it paid", async () => {
+    const storage = createStorage();
+    storage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      user: "demo@cashea.local",
+      purchaseId: purchase.id,
+      installmentId: "installment-2",
+      idempotencyKey: "payment-intent-1",
+    }));
+    const api = createApi();
+    const controller = createCheckoutPageController({ api, view: createView(), storage });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce({
+      ...purchase,
+      status: "paid",
+      plan: purchase.plan.map((item) => item.id === "installment-2" ? { ...item, status: "paid" } : item),
+    });
+
+    await controller.lookupPurchase(purchase.id);
+
+    expect(storage.getItem(PAYMENT_INTENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("reuses the payment key after an uncertain failure and updates the purchase on success", async () => {
+    const storage = createStorage();
+    const api = createApi();
+    const view = createView();
+    const controller = createCheckoutPageController({ api, view, randomUUID: () => "payment-intent-1", storage });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+    await controller.lookupPurchase(purchase.id);
+
+    api.payInstallment.mockRejectedValueOnce(new ApiError("Try again", { code: "NETWORK_ERROR" }));
+    await controller.payInstallment("installment-2");
+    expect(JSON.parse(storage.getItem(PAYMENT_INTENT_STORAGE_KEY))).toMatchObject({
+      purchaseId: purchase.id,
+      installmentId: "installment-2",
+      idempotencyKey: "payment-intent-1",
+    });
+
+    const paidInstallment = { ...purchase.plan[1], status: "paid", paidAt: "2026-08-10T13:00:00.000Z" };
+    api.payInstallment.mockResolvedValueOnce({ installment: paidInstallment, available: 91_000 });
+    await controller.payInstallment("installment-2");
+
+    expect(api.payInstallment).toHaveBeenNthCalledWith(1, purchase.id, "installment-2", "payment-intent-1", "token-1");
+    expect(api.payInstallment).toHaveBeenNthCalledWith(2, purchase.id, "installment-2", "payment-intent-1", "token-1");
+    expect(storage.getItem(PAYMENT_INTENT_STORAGE_KEY)).toBeNull();
+    expect(controller.getState().purchase).toMatchObject({ status: "paid", plan: [purchase.plan[0], paidInstallment] });
+    expect(view.renderAvailable).toHaveBeenCalledWith(91_000, "VES");
+  });
+
+  it("keeps the payment key after a server failure", async () => {
+    const storage = createStorage();
+    const api = createApi();
+    const controller = createCheckoutPageController({ api, view: createView(), randomUUID: () => "payment-intent-1", storage });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+    await controller.lookupPurchase(purchase.id);
+    api.payInstallment.mockRejectedValueOnce(new ApiError("Unavailable", { status: 503, code: "INTERNAL_ERROR" }));
+
+    await controller.payInstallment("installment-2");
+
+    expect(JSON.parse(storage.getItem(PAYMENT_INTENT_STORAGE_KEY))).toMatchObject({
+      installmentId: "installment-2",
+      idempotencyKey: "payment-intent-1",
+    });
+  });
+
+  it("updates the UI after payment success even when retry-state cleanup fails", async () => {
+    const storage = createStorage();
+    const api = createApi();
+    const view = createView();
+    const controller = createCheckoutPageController({ api, view, randomUUID: () => "payment-intent-1", storage });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+    await controller.lookupPurchase(purchase.id);
+    const paidInstallment = { ...purchase.plan[1], status: "paid", paidAt: "2026-08-10T13:00:00.000Z" };
+    api.payInstallment.mockResolvedValueOnce({ installment: paidInstallment, available: 91_000 });
+    storage.removeItem.mockImplementation((key) => {
+      if (key === PAYMENT_INTENT_STORAGE_KEY) throw new Error("storage removal failed");
+    });
+
+    await controller.payInstallment("installment-2");
+
+    expect(controller.getState().purchase).toMatchObject({ status: "paid" });
+    expect(view.renderAvailable).toHaveBeenCalledWith(91_000, "VES");
+    expect(view.showError).toHaveBeenCalledWith("Payment succeeded, but local payment retry state could not be cleared.");
+  });
+
+  it("refreshes stale purchase and credit state when the installment is already paid", async () => {
+    const storage = createStorage();
+    const api = createApi();
+    const view = createView();
+    const controller = createCheckoutPageController({ api, view, randomUUID: () => "payment-intent-1", storage });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+    await controller.lookupPurchase(purchase.id);
+    const refreshedPurchase = {
+      ...purchase,
+      status: "paid",
+      plan: purchase.plan.map((item) => item.id === "installment-2" ? { ...item, status: "paid" } : item),
+    };
+    api.payInstallment.mockRejectedValueOnce(new ApiError("Installment is already paid", { status: 409, code: "ALREADY_PAID" }));
+    api.getPurchase.mockResolvedValueOnce(refreshedPurchase);
+    api.getCreditLine.mockResolvedValueOnce({ ...credit, available: 91_000 });
+
+    await controller.payInstallment("installment-2");
+
+    expect(controller.getState().purchase).toEqual(refreshedPurchase);
+    expect(view.renderCredit).toHaveBeenCalledWith({ ...credit, available: 91_000 });
+    expect(view.setStatus).toHaveBeenCalledWith("Installment was already paid. Purchase details were refreshed.");
+    expect(storage.getItem(PAYMENT_INTENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("resets the session even when payment-intent cleanup fails during logout", async () => {
+    const storage = createStorage();
+    const api = createApi();
+    const view = createView();
+    const controller = createCheckoutPageController({ api, view, storage });
+    await login(controller, api);
+    storage.removeItem.mockImplementation((key) => {
+      if (key === PAYMENT_INTENT_STORAGE_KEY) throw new Error("storage removal failed");
+    });
+
+    expect(() => controller.logout()).toThrow("storage removal failed");
+
+    expect(controller.getState()).toMatchObject({ token: null, user: null, purchase: null });
+    expect(view.resetSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks duplicate installment payments and session transitions while payment is in flight", async () => {
+    const api = createApi();
+    const view = createView();
+    const pendingPayment = deferred();
+    const controller = createCheckoutPageController({ api, view, randomUUID: () => "payment-intent-1", storage: createStorage() });
+    await login(controller, api);
+    api.getPurchase.mockResolvedValueOnce(purchase);
+    await controller.lookupPurchase(purchase.id);
+    api.payInstallment.mockReturnValueOnce(pendingPayment.promise);
+
+    const payment = controller.payInstallment("installment-2");
+    await vi.waitFor(() => expect(api.payInstallment).toHaveBeenCalledOnce());
+    await controller.payInstallment("installment-2");
+    controller.logout();
+
+    expect(api.payInstallment).toHaveBeenCalledOnce();
+    expect(controller.getState().token).toBe("token-1");
+    pendingPayment.resolve({ installment: { ...purchase.plan[1], status: "paid", paidAt: "2026-08-10T13:00:00.000Z" }, available: 91_000 });
+    await payment;
+    expect(view.setInteractionLocked).toHaveBeenLastCalledWith(false);
+  });
+
   it("activates a candidate session only after its credit line loads", async () => {
     const api = createApi();
     const view = createView();
@@ -123,6 +346,7 @@ describe("checkout controller", () => {
     expect(api.createPurchase).toHaveBeenNthCalledWith(2, { amount: 3_000, installments: 3 }, "intent-1", "token-1");
     expect(controller.getState().intent).toBeNull();
     expect(view.renderCredit).toHaveBeenCalledWith({ ...credit, available: 88_000 });
+    expect(view.showPurchaseLink).toHaveBeenCalledWith("purchase-1");
   });
 
   it("restores the same normalized intent after recreating the controller", async () => {

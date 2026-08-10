@@ -89,6 +89,38 @@ describe("frontend API client", () => {
     expect(options.headers.get("Authorization")).toBe("Bearer token-1");
   });
 
+  it("loads an authenticated purchase using an encoded path segment", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new globalThis.Response(JSON.stringify({ id: "purchase/1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await createApiClient({ fetchImpl }).getPurchase("purchase/1", "token-1");
+
+    const [path, options] = fetchImpl.mock.calls[0];
+    expect(path).toBe("/purchases/purchase%2F1");
+    expect(options.headers.get("Authorization")).toBe("Bearer token-1");
+  });
+
+  it("pays an installment with authenticated encoded IDs and an idempotency key", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new globalThis.Response(JSON.stringify({ installment: { id: "installment/1" }, available: 90_000 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await createApiClient({ fetchImpl }).payInstallment("purchase/1", "installment/1", "payment-1", "token-1");
+
+    const [path, options] = fetchImpl.mock.calls[0];
+    expect(path).toBe("/purchases/purchase%2F1/installments/installment%2F1/pay");
+    expect(options.method).toBe("POST");
+    expect(options.headers.get("Idempotency-Key")).toBe("payment-1");
+    expect(options.headers.get("Authorization")).toBe("Bearer token-1");
+  });
+
   it("exports ApiError for typed client-side validation errors", () => {
     expect(new ApiError("invalid", { status: 400, code: "INVALID_AMOUNT" })).toMatchObject({
       status: 400,

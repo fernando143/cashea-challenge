@@ -25,6 +25,7 @@
     <main>
       <h1>Cashea checkout</h1>
       <output id="status" class="muted">Log in to view your credit line.</output>
+      <a id="created-purchase-link" href="#purchase-details" hidden>View purchase</a>
       <p id="error" class="error" role="alert"></p>
 
       <form id="login-form">
@@ -38,6 +39,27 @@
         <p>Available: <strong id="available">—</strong></p>
         <p>Limit: <strong id="limit">—</strong></p>
         <button id="logout-button" type="button">Log out</button>
+
+        <section aria-labelledby="purchase-lookup-title">
+          <h2 id="purchase-lookup-title">View purchase</h2>
+          <form id="purchase-lookup-form">
+            <label>Purchase ID <input id="purchase-id" type="text" autocomplete="off" required /></label>
+            <button id="purchase-lookup-button" type="submit">View purchase</button>
+          </form>
+
+          <section id="purchase-details" hidden>
+            <h3>Purchase details</h3>
+            <p>ID: <strong id="purchase-detail-id"></strong></p>
+            <p>Amount: <strong id="purchase-detail-amount"></strong></p>
+            <p>Status: <strong id="purchase-detail-status"></strong></p>
+            <p>Created at: <strong id="purchase-detail-created-at"></strong></p>
+            <p>Payment method: <strong id="purchase-detail-payment-method"></strong></p>
+            <table class="plan">
+              <thead><tr><th>#</th><th>Amount</th><th>Due date</th><th>Status</th><th>Paid at</th><th>Action</th></tr></thead>
+              <tbody id="purchase-plan-rows"></tbody>
+            </table>
+          </section>
+        </section>
 
         <form id="purchase-form">
           <label>Amount (cents) <input id="amount" type="number" min="3" max="99999999" step="1" required /></label>
