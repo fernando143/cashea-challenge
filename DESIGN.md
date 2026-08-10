@@ -90,18 +90,15 @@ Uno por usuario, semilla fija preaprobada.
 ## Decisiones de diseño
 
 ### Dinero
+Para evitar riesgos con el formato de montos, la API acepta y devuelve enteros JSON en centavos, nunca strings ni decimales. El rango es `1..99_999_999`y por debajo de `Number.MAX_SAFE_INTEGER` y del límite de PostgreSQL. Dominio y repositorios operan con `bigint`/`BIGINT`. Sólo la presentación del navegador transforma centavos a moneda VES.
 
-La API acepta y devuelve enteros JSON en centavos, nunca strings ni decimales.
-El rango público es `1..99_999_999`, por debajo de `Number.MAX_SAFE_INTEGER` y
-del límite de PostgreSQL. Dominio y repositorios operan con `bigint`/`BIGINT`;
-sólo la presentación del navegador transforma centavos a moneda VES con
-`Intl.NumberFormat`. Reparto de cuotas: cuando no divide exacto, las primeras
+Reparto de cuotas: cuando no divide exacto, se decidio que las primeras
 cuotas absorben el resto, para que la suma cierre siempre contra el monto
 original.
 
 ### Concurrencia
-
-Update condicional atómico (`available >= :amount` en el `WHERE`) como primer paso de la transacción de compra — resuelve compras/pagos simultáneos del mismo usuario (double-click, retry, tabs duplicadas) sin necesitar un lock explícito aparte. Se descartaron `SELECT FOR UPDATE` (más verboso para una condición simple), optimistic locking (complejidad de reintento sin beneficio acá) y advisory locks (innecesario cuando ya hay una fila que lockear). El `CHECK` en `credit_lines` es una red de seguridad adicional, no el mecanismo principal.
+Toda la operacion se realiza con transacciones.
+Update condicional atómico (`available >= :amount` en el `WHERE`) como primer paso de la transacción de compra — resuelve compras/pagos simultáneos del mismo usuario (double-click, retry, tabs duplicadas)
 
 ### Idempotencia
 
@@ -156,29 +153,12 @@ para la página. Así cada controller tiene una única razón de cambio y el loc
 interacción compartido evita duplicar la regla de no cambiar sesión durante una
 confirmación.
 
-## Testing
 
-`npm test` ejecuta lógica de negocio y cliente en aislamiento, sin variables de
-entorno ni DB. La integración usa Postgres real para concurrencia y
-transacciones. `npm run test:coverage` prepara la base y ejecuta la suite completa
-una sola vez, con un umbral global de 80%.
+## Testing, CI y calidad
 
-## CI y calidad
-
-GitHub Actions verifica pushes a `main` y pull requests con lint, typecheck de
-fuente/scripts/tests, una ejecución completa con cobertura, build TypeScript y
-build de los targets Docker. LCOV se publica en Codecov. SonarCloud permanece
+Como agregado se incluye GitHub Actions, LCOV se publica en Codecov. SonarCloud permanece
 como quality gate externo; no forma parte del runtime ni implica despliegue.
 
-## Runtime y migraciones
-
-La imagen usa stages separados. `migrator` contiene `tsx`,
-`node-pg-migrate`, scripts y migraciones; `runtime` contiene sólo dependencias de
-producción, `dist/` y el frontend, y se ejecuta como el usuario no-root `node`.
-Compose espera el healthcheck de PostgreSQL, ejecuta `migrator` como servicio
-one-shot y sólo inicia la aplicación si termina exitosamente. `001` permanece
-intacta; las migraciones nuevas usan nombres con timestamp soportados por
-`node-pg-migrate`.
 
 ## Riesgos y casos difíciles identificados
 
@@ -195,9 +175,10 @@ intacta; las migraciones nuevas usan nombres con timestamp soportados por
 
 - Una línea de crédito por usuario, una sola moneda.
 - Límite preaprobado, semilla fija — el proceso de aprobación queda fuera de scope.
+- Cuotas cada 30 dias
 
 ## Fuera de scope
-
+- Fraude
 - Sistema de niveles de crédito / scoring
 - Ledger contable completo / event sourcing
 - Modelo de `Merchant` y reconciliación con comercios

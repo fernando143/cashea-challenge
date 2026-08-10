@@ -105,10 +105,12 @@ export function createCheckoutController({ api, view, getSession, interactionLoc
     view.clearError();
     view.setBusy("confirm", true);
     try {
-      try { await api.createPurchase({ amount: intent.amount, installments: intent.installments }, intent.idempotencyKey, session.token); }
+      let created;
+      try { created = await api.createPurchase({ amount: intent.amount, installments: intent.installments }, intent.idempotencyKey, session.token); }
       catch (cause) { if (state.intent === intent) view.showError(cause instanceof Error ? cause.message : "Purchase failed"); return; }
       if (state.intent === intent && session.token === getSession().token) {
         clearPurchaseIntent();
+        if (typeof created?.purchase?.id === "string") view.showPurchaseLink(created.purchase.id);
         view.setStatus("Purchase confirmed. Refreshing your balance…");
       }
       try {

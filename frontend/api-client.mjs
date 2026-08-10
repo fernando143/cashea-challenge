@@ -57,6 +57,9 @@ export function createApiClient({ fetchImpl = globalThis.fetch } = {}) {
     getCreditLine(token) {
       return request("/credit-line", { token });
     },
+    getPurchase(purchaseId, token) {
+      return request(`/purchases/${encodeURIComponent(purchaseId)}`, { token });
+    },
     previewPurchase(input, token) {
       return request("/purchases/preview", {
         method: "POST",
@@ -70,6 +73,13 @@ export function createApiClient({ fetchImpl = globalThis.fetch } = {}) {
         token,
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify(input),
+      });
+    },
+    payInstallment(purchaseId, installmentId, idempotencyKey, token) {
+      return request(`/purchases/${encodeURIComponent(purchaseId)}/installments/${encodeURIComponent(installmentId)}/pay`, {
+        method: "POST",
+        token,
+        headers: { "Idempotency-Key": idempotencyKey },
       });
     },
   };
