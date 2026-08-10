@@ -1,70 +1,79 @@
-import { db } from "../config/db";
-import { AppError } from "../http/errors";
-import { findCreditLineByUserId, restoreCredit } from "../repositories/credit-lines.repository";
-import { findOwnedInstallment, markInstallmentPaid } from "../repositories/installments.repository";
+import { findOwnedInstallment, type InstallmentRecord } from "../repositories/installments.repository";
 import { completeIdempotency, reserveIdempotency } from "../repositories/idempotency.repository";
-import { serializeCents, serializeInstallment } from "./serialization";
+import type { Database } from "../repositories/types";
+import { ApplicationError } from "./application-error";
+import { settleInstallment } from "./installment-settlement";
+import { withTransaction } from "./transaction";
 
-export async function payInstallmentForUser(
-  userId: string,
-  purchaseId: string,
-  installmentId: string,
-  idempotencyKey: string,
-): Promise<{ status: number; body: Record<string, unknown>; replay: boolean }> {
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    const requestHash = JSON.stringify({ purchaseId, installmentId });
-    const reservation = await reserveIdempotency(client, userId, "payment", idempotencyKey, requestHash);
-    if (reservation.kind === "replay") {
-      await client.query("COMMIT");
-      return { status: reservation.status, body: reservation.body as Record<string, unknown>, replay: true };
-    }
-    if (reservation.kind === "in_progress") {
-      throw new AppError(409, "An operation with this idempotency key is in progress", "IDEMPOTENCY_IN_PROGRESS");
-    }
-
-    const installment = await findOwnedInstallment(client, userId, purchaseId, installmentId);
-    if (!installment) {
-      const body = { error: "Installment not found", code: "NOT_FOUND" };
-      await completeIdempotency(client, reservation.id, 404, body);
-      await client.query("COMMIT");
-      return { status: 404, body, replay: false };
-    }
-    if (installment.status === "paid") {
-      const body = { error: "Installment is already paid", code: "ALREADY_PAID" };
-      await completeIdempotency(client, reservation.id, 409, body);
-      await client.query("COMMIT");
-      return { status: 409, body, replay: false };
-    }
-    const paid = await markInstallmentPaid(client, installment.id);
-    if (!paid) throw new AppError(409, "Installment is already paid", "ALREADY_PAID");
-    const credit = await restoreCredit(client, userId, BigInt(installment.amount));
-    if (!credit) throw new AppError(500, "Credit line could not be updated", "CREDIT_UPDATE_FAILED");
-    const body = {
-      installment: serializeInstallment(paid),
-      available: serializeCents(credit.available),
-    };
-    await completeIdempotency(client, reservation.id, 200, body);
-    await client.query("COMMIT");
-    return { status: 200, body, replay: false };
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    if (error instanceof AppError) throw error;
-    if (error instanceof Error && error.message.includes("Idempotency key")) {
-      throw new AppError(409, error.message, "IDEMPOTENCY_KEY_REUSED");
-    }
-    throw error;
-  } finally {
-    client.release();
-  }
+export interface PaymentData {
+  installment: InstallmentRecord;
+  available: string;
 }
 
-export async function getAvailableCredit(userId: string): Promise<Record<string, unknown>> {
-  const credit = await findCreditLineByUserId(db, userId);
-  if (!credit) throw new AppError(404, "Credit line not found", "NOT_FOUND");
+export type PaymentResult =
+  | { code: "PAYMENT_COMPLETED"; data: PaymentData; replay: boolean }
+  | { code: "PAYMENT_COMPLETED"; legacyBody: Record<string, unknown>; replay: true }
+  | { code: "NOT_FOUND" | "ALREADY_PAID"; message: string; replay: boolean };
+
+export interface PaymentService {
+  pay(userId: string, purchaseId: string, installmentId: string, idempotencyKey: string): Promise<PaymentResult>;
+}
+
+type StoredPaymentResult = { data: PaymentData } | { message: string };
+
+function replayPayment(code: string, body: unknown): PaymentResult {
+  if (!body || typeof body !== "object") throw new Error("Stored payment result is invalid");
+  if (code === "PAYMENT_COMPLETED" && "data" in body) {
+    return { code, data: (body as { data: PaymentData }).data, replay: true };
+  }
+  if (code === "PAYMENT_COMPLETED" && "legacyBody" in body) {
+    return {
+      code,
+      legacyBody: (body as { legacyBody: Record<string, unknown> }).legacyBody,
+      replay: true,
+    };
+  }
+  if ((code === "NOT_FOUND" || code === "ALREADY_PAID") && "message" in body) {
+    return { code, message: String((body as { message: unknown }).message), replay: true };
+  }
+  throw new Error(`Stored payment result has unsupported code ${code}`);
+}
+
+export function createPaymentService(database: Database): PaymentService {
   return {
-    creditLimit: serializeCents(credit.credit_limit),
-    available: serializeCents(credit.available),
+    async pay(userId, purchaseId, installmentId, idempotencyKey) {
+      return withTransaction(database, async (client) => {
+        const requestHash = JSON.stringify({ purchaseId, installmentId });
+        const reservation = await reserveIdempotency(client, userId, "payment", idempotencyKey, requestHash);
+        if (reservation.kind === "replay") return replayPayment(reservation.code, reservation.body);
+        if (reservation.kind === "different_request") {
+          throw new ApplicationError("IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused with a different request");
+        }
+        if (reservation.kind === "in_progress") {
+          throw new ApplicationError("IDEMPOTENCY_IN_PROGRESS", "An operation with this idempotency key is in progress");
+        }
+
+        const installment = await findOwnedInstallment(client, userId, purchaseId, installmentId);
+        if (!installment) {
+          const result = { message: "Installment not found" } satisfies StoredPaymentResult;
+          await completeIdempotency(client, reservation.id, "NOT_FOUND", result);
+          return { code: "NOT_FOUND", ...result, replay: false };
+        }
+        if (installment.status === "paid") {
+          const result = { message: "Installment is already paid" } satisfies StoredPaymentResult;
+          await completeIdempotency(client, reservation.id, "ALREADY_PAID", result);
+          return { code: "ALREADY_PAID", ...result, replay: false };
+        }
+
+        const settlement = await settleInstallment(client, userId, installment);
+        const data: PaymentData = {
+          installment: settlement.installment,
+          available: settlement.credit.available,
+        };
+        const stored = { data } satisfies StoredPaymentResult;
+        await completeIdempotency(client, reservation.id, "PAYMENT_COMPLETED", stored);
+        return { code: "PAYMENT_COMPLETED", data, replay: false };
+      });
+    },
   };
 }

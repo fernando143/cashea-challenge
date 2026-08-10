@@ -1,31 +1,23 @@
-import type { Request, Response } from "express";
-import { AppError } from "../http/errors";
-import { payInstallmentForUser } from "../services/payment.service";
-import { sendControllerError } from "./api-error";
+import type { RequestHandler } from "express";
+import { presentPaymentData } from "../http/presenters";
+import { authenticatedUserId, idempotencyKey, resourceId } from "../http/request";
+import { statusForCode } from "../http/status";
+import type { PaymentService } from "../services/payment.service";
 
-function userId(req: Request): string {
-  if (!req.userId) throw new AppError(401, "Unauthorized", "UNAUTHORIZED");
-  return req.userId;
-}
-
-function requiredParam(value: string | undefined, message: string): string {
-  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new AppError(404, message, "NOT_FOUND");
-  }
-  return value;
-}
-
-export async function payInstallmentController(req: Request, res: Response): Promise<void> {
-  try {
-    const key = req.header("Idempotency-Key")?.trim();
-    if (!key || key.length > 255) {
-      throw new AppError(400, "Idempotency-Key header is required", "IDEMPOTENCY_KEY_REQUIRED");
+export function createPaymentController(service: PaymentService): RequestHandler {
+  return async (request, response) => {
+    const key = idempotencyKey(request);
+    const result = await service.pay(
+      authenticatedUserId(request),
+      resourceId(request.params.purchaseId, "Installment not found"),
+      resourceId(request.params.installmentId, "Installment not found"),
+      key,
+    );
+    if (result.replay) response.setHeader("Idempotency-Replayed", "true");
+    if (result.code === "PAYMENT_COMPLETED") {
+      response.json("legacyBody" in result ? result.legacyBody : presentPaymentData(result.data));
+      return;
     }
-    const purchaseId = requiredParam(req.params.purchaseId, "Installment not found");
-    const installmentId = requiredParam(req.params.installmentId, "Installment not found");
-    const result = await payInstallmentForUser(userId(req), purchaseId, installmentId, key);
-    res.status(result.status).json(result.body);
-  } catch (error) {
-    sendControllerError(res, error);
-  }
+    response.status(statusForCode(result.code)).json({ error: result.message, code: result.code });
+  };
 }

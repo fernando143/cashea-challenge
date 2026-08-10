@@ -8,14 +8,15 @@ export interface IdempotencyRecord {
   operation: IdempotencyOperation;
   key: string;
   request_hash: string | null;
-  response_status: number | null;
+  response_code: string | null;
   response_body: unknown;
 }
 
 export type IdempotencyReservation =
   | { kind: "new"; id: string }
-  | { kind: "replay"; status: number; body: unknown }
-  | { kind: "in_progress" };
+  | { kind: "replay"; code: string; body: unknown }
+  | { kind: "in_progress" }
+  | { kind: "different_request" };
 
 export async function reserveIdempotency(
   client: Queryable,
@@ -34,19 +35,21 @@ export async function reserveIdempotency(
   if (inserted.rows[0]) return { kind: "new", id: inserted.rows[0].id };
 
   const existing = await client.query<IdempotencyRecord>(
-    `SELECT id, user_id, operation, key, request_hash, response_status, response_body
+    `SELECT id, user_id, operation, key, request_hash, response_code, response_body
        FROM idempotency_keys
       WHERE user_id = $1 AND operation = $2 AND key = $3
       FOR UPDATE`,
     [userId, operation, key],
   );
   const row = existing.rows[0];
-  if (!row) return { kind: "new", id: "" };
-  if (row.request_hash !== requestHash) {
-    throw new Error("Idempotency key was reused with a different request");
+  if (!row) {
+    throw new Error("Idempotency reservation disappeared after a uniqueness conflict");
   }
-  if (row.response_status !== null && row.response_body !== null) {
-    return { kind: "replay", status: row.response_status, body: row.response_body };
+  if (row.request_hash !== requestHash) {
+    return { kind: "different_request" };
+  }
+  if (row.response_code !== null && row.response_body !== null) {
+    return { kind: "replay", code: row.response_code, body: row.response_body };
   }
   return { kind: "in_progress" };
 }
@@ -54,12 +57,15 @@ export async function reserveIdempotency(
 export async function completeIdempotency(
   client: Queryable,
   id: string,
-  status: number,
+  code: string,
   body: unknown,
 ): Promise<void> {
-  await client.query(
-    `UPDATE idempotency_keys SET response_status = $2, response_body = $3
+  const result = await client.query(
+    `UPDATE idempotency_keys SET response_code = $2, response_body = $3
       WHERE id = $1`,
-    [id, status, JSON.stringify(body)],
+    [id, code, JSON.stringify(body)],
   );
+  if (result.rowCount !== 1) {
+    throw new Error("Idempotency reservation could not be completed");
+  }
 }

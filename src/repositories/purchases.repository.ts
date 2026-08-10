@@ -6,7 +6,10 @@ export interface PurchaseRecord {
   payment_method_id: string;
   amount: string;
   installments: number;
-  created_at: Date;
+  created_at: Date | string;
+}
+
+export interface PurchaseDetailsRecord extends PurchaseRecord {
   brand: string;
   last4: string;
 }
@@ -18,8 +21,7 @@ export async function createPurchase(
   const result = await client.query<PurchaseRecord>(
     `INSERT INTO purchases (user_id, payment_method_id, amount, installments)
      VALUES ($1, $2, $3, $4)
-     RETURNING id, user_id, payment_method_id, amount, installments, created_at,
-               ''::text AS brand, ''::text AS last4`,
+     RETURNING id, user_id, payment_method_id, amount, installments, created_at`,
     [input.userId, input.paymentMethodId, input.amount.toString(), input.installments],
   );
   return result.rows[0]!;
@@ -29,8 +31,8 @@ export async function findPurchaseOwned(
   client: Queryable,
   userId: string,
   purchaseId: string,
-): Promise<PurchaseRecord | undefined> {
-  const result = await client.query<PurchaseRecord>(
+): Promise<PurchaseDetailsRecord | undefined> {
+  const result = await client.query<PurchaseDetailsRecord>(
     `SELECT p.id, p.user_id, p.payment_method_id, p.amount, p.installments,
             p.created_at, pm.brand, pm.last4
        FROM purchases p

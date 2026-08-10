@@ -7,7 +7,7 @@ export interface InstallmentRecord {
   amount: string;
   due_date: string | Date;
   status: "pending" | "paid";
-  paid_at: Date | null;
+  paid_at: Date | string | null;
 }
 
 export async function createInstallments(

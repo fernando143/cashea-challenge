@@ -5,7 +5,7 @@ import {
   dueDateForInstallment,
   splitInstallments,
 } from "../../src/domain/installments";
-import { assertPositiveCents, toCents } from "../../src/domain/money";
+import { assertPositiveCents, MAX_AMOUNT_CENTS, parseAmountCents, toCents } from "../../src/domain/money";
 
 describe("installment domain", () => {
   it("splits uneven cents into positive values that close exactly", () => {
@@ -32,6 +32,14 @@ describe("installment domain", () => {
     expect(() => dueDateForInstallment("2026-01-01", 0)).toThrow("positive integer");
     expect(() => dueDateForInstallment("not-a-date", 1)).toThrow("valid date");
     expect(() => buildInstallmentPlan(10001, 3, "not-a-date")).toThrow("valid date");
+  });
+
+  it("accepts only bounded integer numbers at the public amount boundary", () => {
+    expect(parseAmountCents(Number(MAX_AMOUNT_CENTS))).toBe(MAX_AMOUNT_CENTS);
+    expect(() => parseAmountCents("10000")).toThrow("integer number of cents");
+    expect(() => parseAmountCents(10.5)).toThrow("integer number of cents");
+    expect(() => parseAmountCents(0)).toThrow("greater than zero");
+    expect(() => parseAmountCents(Number(MAX_AMOUNT_CENTS) + 1)).toThrow("must not exceed");
   });
 
   it("rejects plans with invalid shape or totals", () => {
