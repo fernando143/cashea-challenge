@@ -1,52 +1,47 @@
 import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { db } from "../../src/config/db";
-import { payInstallmentForUser } from "../../src/services/payment.service";
-import { createPurchaseForUser } from "../../src/services/purchase.service";
+import type { Database } from "../../src/repositories/types";
+import { createPaymentService } from "../../src/services/payment.service";
+import { createPurchaseService } from "../../src/services/purchase.service";
 
-function failingClient(): PoolClient {
+function failingDatabase(): { database: Database; client: PoolClient } {
   const query = vi.fn(async (statement: string) => {
     if (statement === "BEGIN") throw new Error("database unavailable");
-    return { rows: [] };
+    return { rows: [], rowCount: 0 };
   });
-  return { query, release: vi.fn() } as unknown as PoolClient;
+  const client = { query, release: vi.fn() } as unknown as PoolClient;
+  const database = {
+    connect: vi.fn().mockResolvedValue(client),
+    query: vi.fn(),
+  } as unknown as Database;
+  return { database, client };
 }
 
 describe("service transaction failures", () => {
   it("rolls back and releases the client when payment fails unexpectedly", async () => {
-    const client = failingClient();
-    const connectSpy = vi.spyOn(db, "connect").mockResolvedValue(client);
-
-    try {
-      await expect(
-        payInstallmentForUser(
-          "00000000-0000-4000-8000-000000000001",
-          "00000000-0000-4000-8000-000000000002",
-          "00000000-0000-4000-8000-000000000003",
-          "payment-error",
-        ),
-      ).rejects.toThrow("database unavailable");
-      expect(client.release).toHaveBeenCalledOnce();
-    } finally {
-      connectSpy.mockRestore();
-    }
+    const { database, client } = failingDatabase();
+    await expect(
+      createPaymentService(database).pay(
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+        "00000000-0000-4000-8000-000000000003",
+        "payment-error",
+      ),
+    ).rejects.toThrow("database unavailable");
+    expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalledOnce();
   });
 
   it("rolls back and releases the client when purchase creation fails unexpectedly", async () => {
-    const client = failingClient();
-    const connectSpy = vi.spyOn(db, "connect").mockResolvedValue(client);
-
-    try {
-      await expect(
-        createPurchaseForUser(
-          "00000000-0000-4000-8000-000000000001",
-          { amount: 10000, installments: 3 },
-          "purchase-error",
-        ),
-      ).rejects.toThrow("database unavailable");
-      expect(client.release).toHaveBeenCalledOnce();
-    } finally {
-      connectSpy.mockRestore();
-    }
+    const { database, client } = failingDatabase();
+    await expect(
+      createPurchaseService(database).create(
+        "00000000-0000-4000-8000-000000000001",
+        { amount: 10000, installments: 3 },
+        "purchase-error",
+      ),
+    ).rejects.toThrow("database unavailable");
+    expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalledOnce();
   });
 });

@@ -1,17 +1,15 @@
-import type { Request, Response } from "express";
-import { AppError } from "../http/errors";
-import { getAvailableCredit } from "../services/payment.service";
-import { sendControllerError } from "./api-error";
+import type { RequestHandler } from "express";
+import { presentCents } from "../http/presenters";
+import { authenticatedUserId } from "../http/request";
+import type { CreditLineService } from "../services/credit-line.service";
 
-function userId(req: Request): string {
-  if (!req.userId) throw new AppError(401, "Unauthorized", "UNAUTHORIZED");
-  return req.userId;
-}
-
-export async function getCreditLineController(req: Request, res: Response): Promise<void> {
-  try {
-    res.json(await getAvailableCredit(userId(req)));
-  } catch (error) {
-    sendControllerError(res, error);
-  }
+export function createCreditLineController(service: CreditLineService): RequestHandler {
+  return async (request, response) => {
+    const credit = await service.get(authenticatedUserId(request));
+    response.json({
+      creditLimit: presentCents(credit.credit_limit),
+      available: presentCents(credit.available),
+      currency: credit.currency,
+    });
+  };
 }

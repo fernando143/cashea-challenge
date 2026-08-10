@@ -1,61 +1,50 @@
-import type { Request, Response } from "express";
+import type { RequestHandler } from "express";
 import { AppError } from "../http/errors";
-import {
-  createPurchaseForUser,
-  getPurchaseForUser,
-  previewPurchase,
-  type PurchaseInput,
-} from "../services/purchase.service";
-import { sendControllerError } from "./api-error";
+import { presentPurchase, presentPurchaseData, presentPurchasePreview } from "../http/presenters";
+import { statusForCode } from "../http/status";
+import { authenticatedUserId, idempotencyKey, resourceId } from "../http/request";
+import type { PurchaseInput, PurchaseService } from "../services/purchase.service";
 
-function userId(req: Request): string {
-  if (!req.userId) throw new AppError(401, "Unauthorized", "UNAUTHORIZED");
-  return req.userId;
-}
-
-function resourceId(value: string | undefined, message: string): string {
-  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new AppError(404, message, "NOT_FOUND");
-  }
-  return value;
-}
-
-function idempotencyKey(req: Request): string {
-  const value = req.header("Idempotency-Key")?.trim();
-  if (!value || value.length > 255) throw new AppError(400, "Idempotency-Key header is required", "IDEMPOTENCY_KEY_REQUIRED");
-  return value;
-}
-
-function input(req: Request): PurchaseInput {
-  const body = (req.body ?? {}) as { amount?: unknown; installments?: unknown };
-  if (body.amount === undefined || body.installments === undefined) {
+function input(body: unknown): PurchaseInput {
+  const value = (body ?? {}) as { amount?: unknown; installments?: unknown };
+  if (value.amount === undefined || value.installments === undefined) {
     throw new AppError(400, "amount and installments are required", "INVALID_INPUT");
   }
-  return { amount: body.amount as PurchaseInput["amount"], installments: body.installments };
+  return { amount: value.amount, installments: value.installments };
 }
 
-export async function previewPurchaseController(req: Request, res: Response): Promise<void> {
-  try {
-    res.json(previewPurchase(input(req)));
-  } catch (error) {
-    sendControllerError(res, error);
-  }
+export interface PurchaseControllers {
+  preview: RequestHandler;
+  create: RequestHandler;
+  get: RequestHandler;
 }
 
-export async function createPurchaseController(req: Request, res: Response): Promise<void> {
-  try {
-    const result = await createPurchaseForUser(userId(req), input(req), idempotencyKey(req));
-    res.status(result.status).json(result.body);
-  } catch (error) {
-    sendControllerError(res, error);
-  }
-}
+export function createPurchaseControllers(service: PurchaseService): PurchaseControllers {
+  return {
+    preview(request, response) {
+      response.json(presentPurchasePreview(service.preview(input(request.body))));
+    },
 
-export async function getPurchaseController(req: Request, res: Response): Promise<void> {
-  try {
-    const purchaseId = resourceId(req.params.purchaseId, "Purchase not found");
-    res.json(await getPurchaseForUser(userId(req), purchaseId));
-  } catch (error) {
-    sendControllerError(res, error);
-  }
+    async create(request, response) {
+      const result = await service.create(
+        authenticatedUserId(request),
+        input(request.body),
+        idempotencyKey(request),
+      );
+      if (result.replay) response.setHeader("Idempotency-Replayed", "true");
+      if (result.code === "PURCHASE_CREATED") {
+        response.status(201).json("legacyBody" in result ? result.legacyBody : presentPurchaseData(result.data));
+        return;
+      }
+      response.status(statusForCode(result.code)).json({ error: result.message, code: result.code });
+    },
+
+    async get(request, response) {
+      const result = await service.get(
+        authenticatedUserId(request),
+        resourceId(request.params.purchaseId, "Purchase not found"),
+      );
+      response.json(presentPurchase(result.purchase, result.installments));
+    },
+  };
 }
