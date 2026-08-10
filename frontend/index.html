@@ -35,11 +35,11 @@
 
       <section id="checkout" hidden>
         <h2>Credit line</h2>
-        <p>Available: <strong id="available">—</strong> cents</p>
-        <p>Limit: <strong id="limit">—</strong> cents</p>
+        <p>Available: <strong id="available">—</strong></p>
+        <p>Limit: <strong id="limit">—</strong></p>
 
         <form id="purchase-form">
-          <label>Amount (cents) <input id="amount" type="number" min="3" step="1" required /></label>
+          <label>Amount (cents) <input id="amount" type="number" min="3" max="99999999" step="1" required /></label>
           <label>Installments
             <select id="installments">
               <option value="3">3</option>
@@ -53,69 +53,13 @@
         <section id="preview" hidden>
           <h2>Preview</h2>
           <table class="plan">
-            <thead><tr><th>#</th><th>Amount (cents)</th><th>Due date</th></tr></thead>
+            <thead><tr><th>#</th><th>Amount</th><th>Due date</th></tr></thead>
             <tbody id="plan-rows"></tbody>
           </table>
           <button id="confirm-button" type="button">Confirm purchase</button>
         </section>
       </section>
     </main>
-    <script>
-      const state = { token: null, preview: null };
-      const $ = (id) => document.getElementById(id);
-      const error = (message = "") => { $("error").textContent = message; };
-      const busy = (button, value) => { button.disabled = value; $("status").textContent = value ? "Loading…" : ""; };
-      async function request(url, options = {}) {
-        const headers = new Headers(options.headers);
-        headers.set("Content-Type", "application/json");
-        if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
-        const response = await fetch(url, { ...options, headers });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.error || "Request failed");
-        return body;
-      }
-      async function refreshCredit() {
-        const credit = await request("/credit-line");
-        $("available").textContent = credit.available;
-        $("limit").textContent = credit.creditLimit;
-      }
-      $("login-form").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = event.currentTarget.querySelector("button");
-        error(); busy(button, true);
-        try {
-          const body = await request("/login", { method: "POST", body: JSON.stringify({ email: $("email").value, password: $("password").value }) });
-          state.token = body.token;
-          $("checkout").hidden = false;
-          $("status").textContent = "Ready to simulate a purchase.";
-          await refreshCredit();
-        } catch (cause) { error(cause.message); }
-        finally { busy(button, false); }
-      });
-      $("purchase-form").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = $("preview-button");
-        error(); busy(button, true); $("preview").hidden = true;
-        try {
-          const body = await request("/purchases/preview", { method: "POST", body: JSON.stringify({ amount: Number($("amount").value), installments: Number($("installments").value) }) });
-          state.preview = body;
-          $("plan-rows").innerHTML = body.plan.map((item) => `<tr><td>${item.number}</td><td>${item.amount}</td><td>${item.dueDate}</td></tr>`).join("");
-          $("preview").hidden = false;
-        } catch (cause) { error(cause.message); }
-        finally { busy(button, false); }
-      });
-      $("confirm-button").addEventListener("click", async () => {
-        if (!state.preview) return;
-        const button = $("confirm-button");
-        error(); busy(button, true);
-        try {
-          await request("/purchases", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ amount: state.preview.amount, installments: state.preview.installments }) });
-          await refreshCredit();
-          $("status").textContent = "Purchase confirmed. Your balance was refreshed.";
-          $("preview").hidden = true; state.preview = null;
-        } catch (cause) { error(cause.message.includes("Insufficient") ? "Insufficient available credit." : cause.message); }
-        finally { busy(button, false); }
-      });
-    </script>
+    <script type="module" src="/main.mjs"></script>
   </body>
 </html>
