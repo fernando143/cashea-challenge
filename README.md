@@ -16,31 +16,39 @@ Backend de un flujo de compras en cuotas (BNPL), con frontend mínimo y la revis
 ### Pasos
 
 1. Copiar `.env.example` a `.env`: `cp .env.example .env`.
-2. `docker compose up -d --build` — levanta el backend y Postgres.
-3. Correr las migraciones desde el host: `PGHOST=localhost npm run migrate:up`.
-4. Sembrar datos de prueba desde el host: `PGHOST=localhost npm run seed` — crea un usuario con credenciales conocidas y una línea de crédito, para poder loguearse desde el frontend.
-5. Verificar el servicio: `curl http://localhost:3000/health`.
-6. Abrir `http://localhost:3000/` para usar el frontend mínimo de login,
+2. `docker compose up -d --build` — levanta Postgres, espera su healthcheck,
+   ejecuta las migraciones y recién entonces inicia el backend.
+3. Sembrar datos de prueba desde el host: `PGHOST=localhost npm run seed` — crea un usuario con credenciales conocidas y una línea de crédito, para poder loguearse desde el frontend.
+4. Verificar el servicio: `curl http://localhost:3000/health`.
+5. Abrir `http://localhost:3000/` para usar el frontend mínimo de login,
    simulación y confirmación.
 
-`.env` es la única fuente de configuración del runtime. La aplicación y
-Postgres consumen `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
-`PORT`, `NODE_ENV`, `JWT_SECRET`, `SEED_EMAIL` y `SEED_PASSWORD`; no se usa `DATABASE_URL` ni se mantienen
-credenciales fallback en `docker-compose.yml`.
+El servicio `migrate` es one-shot: termina con código cero cuando no quedan
+migraciones pendientes. La aplicación depende de ese resultado y no arranca si
+una migración falla. Para diagnosticarlo: `docker compose logs migrate`.
+
+`.env` es la fuente de configuración del runtime para conexión, puerto, JWT y
+seed. La aplicación y Postgres consumen `PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`, `PGDATABASE`, `PORT`, `JWT_SECRET`, `SEED_EMAIL` y
+`SEED_PASSWORD`; Compose fija `NODE_ENV=production` para la aplicación y el
+migrator. No se usa `DATABASE_URL` ni se mantienen credenciales fallback en
+`docker-compose.yml`.
 
 ### Tests
 
-- `npm test` — tests unitarios (seguros para ejecutar sin una base local).
+- `npm test` — tests unitarios y del frontend; no requiere `.env` ni una base local.
 - `npm run test:unit` — tests unitarios.
 - `npm run test:integration` — tests contra PostgreSQL real, no mocks (ver `DESIGN.md` → Testing).
-- `npm run test:coverage` — suite con cobertura.
+- `npm run test:coverage` — prepara la base y ejecuta toda la suite una sola vez con cobertura.
 - `npm run lint` — ESLint sobre el código fuente y los tests.
 - `npm run typecheck` — chequeo estático de TypeScript.
 
-La cobertura de CI instrumenta el runtime de `src/**/*.ts` y exige al menos
+La cobertura instrumenta el runtime de `src/**/*.ts` y los módulos del cliente
+en `frontend/`; exige al menos
 80% en líneas, statements, branches y funciones. Se excluyen el bootstrap de
 `src/server.ts`, los tipos sin runtime de `src/repositories/types.ts` y los
-scripts operativos de `scripts/`.
+scripts operativos de `scripts/`. También se excluye `frontend/main.mjs`, que es
+el composition root del navegador.
 
 Para integración, copiar `.env.test.example` a `.env.test` y mantener
 `PGDATABASE=cashea_test`. El hook `pretest:integration` crea esa base si no
@@ -55,10 +63,17 @@ Los comandos de migración y seed también usan las variables `PG*` individuales
 
 ### CI
 
-GitHub Actions ejecuta en cada push y pull request `lint`, tests unitarios,
-tests de integración contra un servicio PostgreSQL efímero, cobertura de la
-capa unitaria y `build`. La integración siempre usa `cashea_test`; nunca usa
-la base de desarrollo.
+GitHub Actions ejecuta en los pushes a `main` y en pull requests: `lint`,
+typecheck, la suite completa con cobertura contra PostgreSQL efímero, `build` y
+los targets Docker `migrator` y `runtime`. La suite corre una sola vez y publica
+su LCOV en Codecov. La integración siempre usa `cashea_test`; nunca usa la base
+de desarrollo.
+
+### Contrato monetario
+
+La API recibe y devuelve enteros JSON en centavos, entre `1` y `99_999_999`.
+No acepta strings ni decimales. Dominio y persistencia operan con enteros
+(`bigint`/`BIGINT`); sólo el frontend aplica formato de moneda para mostrar VES.
 
 ### Credenciales de prueba
 

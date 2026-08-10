@@ -1,6 +1,9 @@
-node_modules
-dist
+.atl
+.codegraph
+.env*
 .git
-.env
-*.log
+.github
 coverage
+dist
+node_modules
+*.log

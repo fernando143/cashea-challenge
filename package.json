@@ -19,7 +19,6 @@
     "test:integration": "node --env-file=.env.test ./node_modules/vitest/vitest.mjs run tests/integration",
     "pretest:coverage": "node --env-file=.env.test ./node_modules/tsx/dist/cli.mjs scripts/test-db.ts",
     "test:coverage": "node --env-file=.env.test ./node_modules/vitest/vitest.mjs run tests --coverage",
-    "test:coverage:ci": "npm run test:coverage",
     "test:watch": "vitest"
   },
   "dependencies": {
