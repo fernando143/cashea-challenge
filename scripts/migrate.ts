@@ -5,12 +5,13 @@ const direction = process.argv[2];
 if (direction !== "up" && direction !== "down") {
   throw new Error("Usage: npm run migrate:up|migrate:down");
 }
+const migrationDirection: "up" | "down" = direction;
 
 async function main(): Promise<void> {
   loadEnvFile(process.env.PGDATABASE === "cashea_test" ? ".env.test" : ".env");
 
   await runner({
-    direction,
+    direction: migrationDirection,
     databaseUrl: pgConfig(),
     dir: "migrations",
     migrationsTable: "pgmigrations",
