@@ -178,16 +178,17 @@ como quality gate externo; no forma parte del runtime ni implica despliegue.
 - Cuotas cada 30 dias
 
 ## Fuera de scope
-- Fraude
-- Sistema de niveles de crédito / scoring
-- Ledger contable completo / event sourcing
-- Modelo de `Merchant` y reconciliación con comercios
-- Notificaciones, colas de mensajes, webhooks
+Los siguientes items quedan fuera de scope debido a que no son requeridos ni necesarios en el contexto de este challenge:
+- Fraude: al utilizar usuarios de prueba y en local no es requerido. En caso de una eventual mejora se avanzaria con un third party como 3DSecure, delegando asi la responsabilidad y complejidad en un proveedor externo, asi se evita re-trabajo y desenfoque de lo que el producto trata de ofrecer.
+- Sistema de niveles de crédito / scoring: Incluso si se incluyera, no se haria en este repositorio, logica de credito y/o scoring es responsabilidad de otro sistema.
+- Ledger contable completo / event sourcing: en el contexto del challenge, no aplica, pero es interesante tenerlo en cuenta cuando se requiera trazabilidad contable.
+- Modelo de `Merchant` y reconciliación con comercios: Queda por fuera ya que para este challenge no existe la figura de Merchant, no se conecta con sistemas externos, por ende no hace falta reconciliacion.
+- Notificaciones, colas de mensajes, webhooks: En caso de deployar y empezar a tener volumen, si se requeriria manejar la asincronia del estado de pagos y cuotas. Esto no es requerido pero es neceario tenerlo en cuenta en caso de escalar y mejorar usabilidad de cara al usuario.
 - Mora, intereses, refunds, cobranza
-- Pago parcial de cuotas
+- Pago parcial de cuotas: Por simplicidad, no se implementa, pero puede pensarse en mejora desde el lado ux
 - Rate limiting general (el fix puntual del hallazgo #10 sí se hace), MFA, blacklist de JWT, step-up auth
 - Refresh token
-- Redis como store de idempotencia
-- Escalado horizontal, sharding, caching, circuit breakers
-- Despliegue, observabilidad técnica avanzada
-- Dashboard de salud de negocio (Grafana sobre Postgres directo)
+- Redis como store de idempotencia: Hoy por hoy la idempotencia se maneja en la db de postgres, en caso de escalamiento, para evitar cargas y demoras, se pondria un cache delante del servidor, pero esto conlleva manejar fresh y stale data, ademas sincronizacion con la db.
+- Escalado horizontal, sharding, caching, circuit breakers: totalmente innecesario para este challenge, pero pensando en escalado, se puede incluir load balancer, para cuando la db crece aplicar sharding, solamente cuando se tiene gran volumen de datos y aun con indexacion las queries son lentas. Circuit breaker para agregar resiliencia cuando se consumen sistemas externos.
+- Observabilidad: fuera de scope pero en caso de llevarlo a produccion es necesario tener un minimo de observabilidad, logs estructurados, trazas distribuidas.
+- Dashboard de salud de negocio: independientemente del APM, deben haber dashboard de negocio/producto, se deja de lado pero en caso de que esto sea productivo, conviene considerarlo.
