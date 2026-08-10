@@ -66,16 +66,16 @@ export async function createPurchaseForUser(
       throw new AppError(409, "An operation with this idempotency key is in progress", "IDEMPOTENCY_IN_PROGRESS");
     }
 
-    const creditLine = await reserveCredit(client, userId, normalized.amount);
-    if (!creditLine) {
-      const body = { error: "Insufficient available credit", code: "INSUFFICIENT_CREDIT" };
+    const paymentMethod = await findPaymentMethodByUserId(client, userId);
+    if (!paymentMethod) {
+      const body = { error: "No payment method is available", code: "PAYMENT_METHOD_REQUIRED" };
       await completeIdempotency(client, reservation.id, 409, body);
       await client.query("COMMIT");
       return { status: 409, body, replay: false };
     }
-    const paymentMethod = await findPaymentMethodByUserId(client, userId);
-    if (!paymentMethod) {
-      const body = { error: "No payment method is available", code: "PAYMENT_METHOD_REQUIRED" };
+    const creditLine = await reserveCredit(client, userId, normalized.amount);
+    if (!creditLine) {
+      const body = { error: "Insufficient available credit", code: "INSUFFICIENT_CREDIT" };
       await completeIdempotency(client, reservation.id, 409, body);
       await client.query("COMMIT");
       return { status: 409, body, replay: false };
